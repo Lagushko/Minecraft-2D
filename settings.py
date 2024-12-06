@@ -128,11 +128,13 @@ craft = {
     "brick": ([None, None, None, None, "clay_ball", None, None, "coal", None], 1),
     "scissors": ([None, None, None, None, "iron", None, "iron", None, None], 238),
 }
-mining = {"_axe": ["wood", "planks", "crafting_table"],
-          "_pickaxe": ["stone", "ore", "bricks", "anvil", "netherrack", "_block", "andesite", "diorite", "granite"],
-          "_shovel": ["dirt", "grass", "sand", "snow", "gravel"],
-          "scissors": ["leaves", "wool"],
-          "_sword": ["cobweb"]}
+mining = {
+    "_axe": ["wood", "planks", "crafting_table"],
+    "_pickaxe": ["stone", "ore", "bricks", "anvil", "netherrack", "_block", "andesite", "diorite", "granite"],
+    "_shovel": ["dirt", "grass", "sand", "snow", "gravel"],
+    "scissors": ["leaves", "wool"],
+    "_sword": ["cobweb"]
+}
 
 pygame.init()
 
@@ -155,17 +157,18 @@ speed_multiplier = 1.5
 health = 20
 hunger = 20
 
-VERSION = "Alpha-0.10.0"
+VERSION = "Beta-0.11.0"
 
 # controls
-LEFT = pygame.K_a
-RIGHT = pygame.K_d
-JUMP = pygame.K_SPACE
-SNEAK = pygame.K_LSHIFT
-RUN = pygame.K_LCTRL
-WINDOW = pygame.K_e
-BACK_BUILD = pygame.K_q
-SAVE = pygame.K_KP_ENTER
+LEFT = [pygame.K_a]
+RIGHT = [pygame.K_d]
+JUMP = [pygame.K_SPACE]
+SNEAK = [pygame.K_LSHIFT]
+RUN = [pygame.K_LCTRL]
+WINDOW = [pygame.K_e]
+BACK_BUILD = [pygame.K_s]
+MENU = [pygame.K_ESCAPE]
 
 # rules
-keep_inventory = True
+flat_world = [False]
+keep_inventory = [False]
