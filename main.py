@@ -2,7 +2,7 @@ import pygame, random, noise, os, sys
 from tkinter import filedialog
 from settings import *
 
-files_path = os.path.join(".Files/Minecraft")
+files_path = os.path.dirname(os.path.abspath(__file__))
 clock = pygame.time.Clock()
 FPS = 25
 
