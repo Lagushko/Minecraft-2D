@@ -157,7 +157,7 @@ speed_multiplier = 1.5
 health = 20
 hunger = 20
 
-VERSION = "Beta-0.11.0"
+VERSION = "Beta-0.11.1"
 
 # controls
 LEFT = [pygame.K_a]
