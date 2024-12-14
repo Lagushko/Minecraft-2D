@@ -72,6 +72,10 @@ items = {
     "gold_sword": {"dig": 12, "strength": 32, "damage": 4},
     "diamond_sword": {"dig": 10, "strength": 1561, "damage": 7},
     "scissors": {"dig": 5, "strength": 238},
+
+    # other
+    "water_bucket": {"block": "water", "remain": "bucket"},
+    "lava_bucket": {"block": "lava", "remain": "bucket"},
 }
 craft = {
     # blocks
@@ -127,6 +131,7 @@ craft = {
     "quartz": ([None, None, None, None, "quartz_ore", None, None, None, None], 1),
     "brick": ([None, None, None, None, "clay_ball", None, None, "coal", None], 1),
     "scissors": ([None, None, None, None, "iron", None, "iron", None, None], 238),
+    "bucket": ([None, None, None, "iron", None, "iron", None, "iron", None], 1),
 }
 mining = {
     "_axe": ["wood", "planks", "crafting_table"],
@@ -140,7 +145,7 @@ pygame.init()
 
 screen_info = pygame.display.Info()
 screen_width, screen_height = screen_info.current_w, screen_info.current_h
-BLOCK_SIZE = screen_height//10
+BLOCK_SIZE = screen_height//30*3
 
 player_width, player_height = BLOCK_SIZE, BLOCK_SIZE*1.8
 player_x, player_y = 0, -BLOCK_SIZE*4
@@ -157,7 +162,7 @@ speed_multiplier = 1.5
 health = 20
 hunger = 20
 
-VERSION = "Beta-0.11.1"
+VERSION = "Beta-0.11.2"
 
 # controls
 LEFT = [pygame.K_a]
@@ -172,3 +177,7 @@ MENU = [pygame.K_ESCAPE]
 # rules
 flat_world = [False]
 keep_inventory = [False]
+daylight_cycle = [True]
+weather_cycle = [True]
+mob_spawning = [True]
+mob_loot = [True]
