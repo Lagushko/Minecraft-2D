@@ -23,7 +23,7 @@ Beta-0.11.0 save worlds, game menu;
 Beta-0.12.0 food;                 
 Beta-0.13.0 sounds;                 
 Beta-0.14.0 special blocks;                 
-Beta-0.15.0 poisons;                 
+Beta-0.15.0 special items, effects;                 
 Beta-0.16.0 mobs;                 
 Beta-0.17.0 nether world;                 
 Beta-0.18.0 chat;                 
