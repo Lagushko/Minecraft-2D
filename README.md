@@ -1,6 +1,6 @@
 The main.py file contains the main game logic and functionality. 
 The settings.py file contains many settings for the game, as well as the ability to quickly and easily make a simple mode. 
-Also, below the dictionaries and character settings, the game version and rules are written along with the controls, which you can change.
+Also, below the dictionaries and character settings, the game functionality settings are written.
 
 Versions and updates planned for the game:
 
