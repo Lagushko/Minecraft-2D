@@ -1,38 +1,38 @@
 import pygame
 
 blocks = {
-    "grass": {"break": 0.75, "drop": "dirt"},
+    "grass": {"break": 0.75, "drop": ["dirt"]},
     "dirt": {"break": 0.75},
     "sand": {"break": 0.5, "physics": True},
-    "stone": {"break": 1.5, "drop": "cobblestone", "tools": "_pickaxe"},
+    "stone": {"break": 1.5, "drop": ["cobblestone"], "tools": "_pickaxe"},
     "cobblestone": {"break": 1.5, "tools": "_pickaxe"},
     "lava": {"break": float('inf'), "liquid": [1, 0]},
     "water": {"break": float('inf'), "liquid": [0.5, 0]},
     "bedrock": {"break": float('inf')},
     "wood": {"break": 1.0},
-    "leaves": {"break": 0.25, "tools": "scissors"},
+    "leaves": {"break": 0.25, "drop": ["leaves"]*9+["apple"], "notooldrop": [None]*9+["apple"], "tools": "scissors"},
     "sandstone": {"break": 1.0, "tools": "_pickaxe"},
-    "gravel": {"break": 0.75, "physics": True},
-    "coal_ore": {"break": 1.5, "drop": "coal", "tools": "_pickaxe", "exc": ["wood_pickaxe"]},
+    "gravel": {"break": 0.75, "drop": ["gravel"]*9+["flint"], "physics": True},
+    "coal_ore": {"break": 1.5, "drop": ["coal"], "tools": "_pickaxe", "exc": ["wood_pickaxe"]},
     "iron_ore": {"break": 1.5, "tools": "_pickaxe", "exc": ["wood_pickaxe", "gold_pickaxe"]},
     "gold_ore": {"break": 1.5, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "diamond_ore": {"break": 1.5, "drop": "diamond", "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "emerald_ore": {"break": 1.5, "drop": "emerald", "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "redstone_ore": {"break": 1.5, "drop": "redstone", "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "lapis_ore": {"break": 1.5, "drop": "lapis", "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe"]},
+    "diamond_ore": {"break": 1.5, "drop": ["diamond"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
+    "emerald_ore": {"break": 1.5, "drop": ["emerald"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
+    "redstone_ore": {"break": 1.5, "drop": ["redstone"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
+    "lapis_ore": {"break": 1.5, "drop": (["lapis"], 7), "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe"]},
     "planks": {"break": 1.0},
     "crafting_table": {"break": 1.0},
-    "clay": {"break": 0.6, "drop": "clay_ball"},
-    "glass": {"break": 0.4, "drop": None},
+    "clay": {"break": 0.6, "drop": (["clay_ball"], 4)},
+    "glass": {"break": 0.4, "drop": [None]},
     "obsidian": {"break": 9.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "gold_pickaxe"]},
-    "snow": {"break": 0.3, "drop": "snowball"},
+    "snow": {"break": 0.3, "drop": (["snowball"], 4)},
     "ice": {"break": 0.5},
     "nether_bricks": {"break": 1.5, "tools": "_pickaxe"},
     "netherrack": {"break": 0.5, "tools": "_pickaxe"},
     "soul_sand": {"break": 0.8},
-    "glowstone": {"break": 0.6, "drop": "glowstone_dust"},
+    "glowstone": {"break": 0.6, "drop": (["glowstone_dust"], 4)},
     "bricks": {"break": 1.5, "tools": "_pickaxe"},
-    "quartz_ore": {"break": 1.5, "drop": "quartz", "tools": "_pickaxe"},
+    "quartz_ore": {"break": 1.5, "drop": ["quartz"], "tools": "_pickaxe"},
     "end_stone": {"break": 1.5, "tools": "_pickaxe"},
     "anvil": {"break": 5.0, "tools": "_pickaxe", "physics": True},
     "iron_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
@@ -47,8 +47,17 @@ blocks = {
     "andesite": {"break": 1.5, "tools": "_pickaxe"},
     "granite": {"break": 1.5, "tools": "_pickaxe"},
     "wool": {"break": 0.25},
-    "cobweb": {"break": 20, "drop": "string", "tools": "_sword"}
+    "cobweb": {"break": 20, "drop": ["string"], "tools": "_sword"},
+    "melon": {"break": 0.5, "drop": (["melon_slice"], 4)}
 }
+# break - time for breaking block in seconds
+# drop - items or blocks that will drop if don't block drop themself (if more than 1 items it will be chosen randomly, and if make it a tuple the second value is an amount of drop)
+# notooldrop - same as drop, but ignores tools and exc conditions
+# physics - add if block will have physics like sand
+# tools - name of only tool that can break this block to have drop
+# exc - exceptions for tools that can't break this block
+# liquid - speed at which the liquid spreads in seconds, last time updated (just leave 0)
+
 items = {
     # tools
     "wood_pickaxe": {"dig": 2, "strength": 59},
@@ -73,10 +82,33 @@ items = {
     "diamond_sword": {"dig": 10, "strength": 1561, "damage": 7},
     "scissors": {"dig": 5, "strength": 238},
 
+    # food
+    "apple": {"hunger": 4},
+    "bread": {"hunger": 5},
+    "carrot": {"hunger": 3},
+    "melon_slice": {"hunger": 2},
+    "potato": {"hunger": 1},
+    "baked_potato": {"hunger": 5},
+    "beef": {"hunger": 2},
+    "cooked_beef": {"hunger": 8},
+    "chicken": {"hunger": 2},
+    "cooked_chicken": {"hunger": 6},
+    "rabbit": {"hunger": 1},
+    "cooked_rabbit": {"hunger": 5},
+    "rabbit_stew": {"hunger": 5},
+    "golden_apple": {"hunger": 4},
+
     # other
     "water_bucket": {"block": "water", "remain": "bucket"},
     "lava_bucket": {"block": "lava", "remain": "bucket"},
 }
+# dig - how many times faster a targeted block breaks (targeted blocks are in dict mining)
+# strength - number of uses of the item to break
+# damage - damage that this item deals
+# hunger - how many hunger units it will give
+# block - if you can place this item in the form of a block
+# remain - if after using an item another one should appear
+
 craft = {
     # blocks
     "stone": ([None, None, None, None, "cobblestone", None, None, "coal", None], 1),
@@ -128,11 +160,29 @@ craft = {
     "clay_ball": ([None, None, None, None, "clay", None, None, None, None], 1),
     "glowstone_dust": ([None, None, None, None, "glowstone", None, None, None, None], 1),
     "snowball": ([None, None, None, None, "snow", None, None, None, None], 1),
-    "quartz": ([None, None, None, None, "quartz_ore", None, None, None, None], 1),
     "brick": ([None, None, None, None, "clay_ball", None, None, "coal", None], 1),
     "scissors": ([None, None, None, None, "iron", None, "iron", None, None], 238),
     "bucket": ([None, None, None, "iron", None, "iron", None, "iron", None], 1),
+    "cooked_beef": ([None, None, None, None, "beef", None, None, "coal", None], 1),
+    "cooked_chicken": ([None, None, None, None, "chicken", None, None, "coal", None], 1),
+    "cooked_rabbit": ([None, None, None, None, "rabbit", None, None, "coal", None], 1),
+    "baked_potato": ([None, None, None, None, "potato", None, None, "coal", None], 1),
+    "rabbit_stew": ([None, "cooked_rabbit", None, "carrot", "baked_potato", "mushroom", None, "bowl", None], 1),
+    "bowl": ([None, None, None, "planks", None, "planks", None, "planks", None], 1),
+    "coal": ([None, None, None, None, "coal_block", None, None, None, None], 9),
+    "iron.d1": ([None, None, None, None, "iron_block", None, None, None, None], 9),
+    "gold.d1": ([None, None, None, None, "gold_block", None, None, None, None], 9),
+    "diamond": ([None, None, None, None, "diamond_block", None, None, None, None], 9),
+    "emerald": ([None, None, None, None, "emerald_block", None, None, None, None], 9),
+    "lapis": ([None, None, None, None, "lapis_block", None, None, None, None], 9),
+    "redstone": ([None, None, None, None, "redstone_block", None, None, None, None], 9),
+    "quartz": ([None, None, None, None, "quartz_block", None, None, None, None], 9),
+    "golden_apple": (["gold", "gold", "gold", "gold", "apple", "gold", "gold", "gold", "gold"], 1),
 }
+# key is a item that you can craft, if item have many crafts just add .d1, .d2 and so on to name
+# value is a tuple where first is list of items that needed for craft
+# and where second is count of items that you will get from craft
+
 mining = {
     "_axe": ["wood", "planks", "crafting_table"],
     "_pickaxe": ["stone", "ore", "bricks", "anvil", "netherrack", "_block", "andesite", "diorite", "granite"],
@@ -140,6 +190,9 @@ mining = {
     "scissors": ["leaves", "wool"],
     "_sword": ["cobweb"]
 }
+# key is a type of tool that needed
+# value is a list with blocks that this tool can break 
+# also you can put a part of the name so as not to write a lot of identical blocks (like _block for diamond, iron _block)
 
 pygame.init()
 
@@ -159,10 +212,12 @@ default_width, default_height = BLOCK_SIZE, BLOCK_SIZE*1.8
 shift_width, shift_height = BLOCK_SIZE, BLOCK_SIZE*1.5
 speed_multiplier = 1.5
 
+extra_health = 0
 health = 20
 hunger = 20
+time = 0
 
-VERSION = "Beta-0.11.2"
+VERSION = "Beta-0.12.0"
 
 # controls
 LEFT = [pygame.K_a]
