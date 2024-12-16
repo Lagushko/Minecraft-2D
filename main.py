@@ -9,29 +9,41 @@ state = "menu"
 FPS = 25
 
 class Block:
-    def __init__(self, x, y, type, parent=None, liquidlevel=0):
+    def __init__(self, x, y, type, collide=True, parent=None, liquidlevel=0):
         self.x = x
         self.y = y
         self.type = type
+        
+        self.platform = pygame.Rect(x, y, BLOCK_SIZE, BLOCK_SIZE)
+        self.collide = collide
+
         self.broke = False
         self.breaktime = 0
-        self.platform = pygame.Rect(x, y, BLOCK_SIZE, BLOCK_SIZE)
 
         self.liquided = False
         self.liquidlevel = liquidlevel
         self.parent = parent
     def breaking(self, time):
-        global mouse_pos, platforms, inv_counts, inv_items, inv_num
+        global mouse_pos, platforms, inv_counts, inv_items, inv_num, chunks, cur_chunk
         if mouse_pos != (self.x, self.y):
             self.broke = False
             self.breaktime = 0
         if self.broke:
             self.breaktime += 1
         if self.breaktime >= time * FPS:
+            count = 1
             if "drop" in blocks[self.type]:
-                drop = blocks[self.type]["drop"]
+                if len(blocks[self.type]["drop"]) > 1 and type(blocks[self.type]["drop"][0]) is list:
+                    drop = random.choice(blocks[self.type]["drop"][0])
+                    count = int(blocks[self.type]["drop"][1])
+                else:
+                    drop = random.choice(blocks[self.type]["drop"])
             else:
                 drop = self.type
+            if "notooldrop" in blocks[self.type]:
+                notooldrop = random.choice(blocks[self.type]["notooldrop"])
+            else:
+                notooldrop = False
             if "tools" in blocks[self.type]:
                 tools = str(blocks[self.type]["tools"])
             else:
@@ -42,36 +54,35 @@ class Block:
                 exc = ""
             if self in platforms:
                 platforms.remove(self)
-            elif self in uncollide_plats:
-                uncollide_plats.remove(self)
+                try:
+                    chunks[cur_chunk][0].remove(self)
+                except: None
             blks = [get_block_at(mouse=(self.x, self.y-BLOCK_SIZE)), get_block_at(mouse=(self.x-BLOCK_SIZE, self.y)), get_block_at(mouse=(self.x+BLOCK_SIZE, self.y))]
             for b in blks:
                 if b:
                     b.liquided = False
             self.broke = False
-            if tools in str(inv_items[inv_num]) and not str(inv_items[inv_num]) in exc:
-                if drop in inv_items:
-                    inv_counts[inv_items.index(drop)] += 1
-                else:
-                    if inv_items.count(None) > 0:
-                        ind = 0
-                        for i, a in enumerate(inv_items):
-                            if a == None:
-                                ind = i
-                                break
-                        inv_items[ind] = drop
-                        inv_counts[ind] = 1 if drop is not None else 0
-            if inv_items[inv_num] is not None and (
-                "_pickaxe" in inv_items[inv_num] or 
-                "_axe" in inv_items[inv_num] or 
-                "_shovel" in inv_items[inv_num] or
-                "scissors" in inv_items[inv_num]):
+            if (tools in str(inv_items[inv_num]) and not str(inv_items[inv_num]) in exc) or notooldrop is not False:
+                if notooldrop is not False and not (tools in str(inv_items[inv_num]) and not str(inv_items[inv_num]) in exc):
+                    drop = notooldrop
+                if drop is not None:
+                    if drop in inv_items:
+                        inv_counts[inv_items.index(drop)] += count
+                    else:
+                        if inv_items.count(None) > 0:
+                            ind = 0
+                            for i, a in enumerate(inv_items):
+                                if a == None:
+                                    ind = i
+                                    break
+                            inv_items[ind] = drop
+                            inv_counts[ind] = count
+            if inv_items[inv_num] is not None and any(key in inv_items[inv_num] for key in mining.keys()):
                 inv_counts[inv_num]-=1
                 if inv_counts[inv_num] == 0:
-                    inv_items[inv_num] = None
-    
+                    inv_items[inv_num] = None 
     def liquid(self):
-        global platforms, uncollide_plats, uncollide_pos
+        global platforms, chunks, cur_chunk
         opp = ("water", "cobblestone", 3) if self.type == "lava" else ("lava", "obsidian", 7)
         block_down = get_block_at(mouse=(self.x, self.y+BLOCK_SIZE))
         block_left = get_block_at(mouse=(self.x-BLOCK_SIZE, self.y))
@@ -79,16 +90,26 @@ class Block:
         for b in [block_down, block_left, block_right]:
             if b and b.type == opp[0]:
                 if self.type == "lava": 
-                    platforms.append(Block(self.x, self.y, opp[1]))
-                    if self in uncollide_plats:
-                        uncollide_plats.remove(self)
+                    block = Block(self.x, self.y, opp[1])
+                    platforms.append(block)
+                    chunks[cur_chunk][0].append(block)
+                    if self in platforms:
+                        platforms.remove(self)
+                        try:
+                            chunks[cur_chunk][0].remove(self)
+                        except: None
                     block_up = get_block_at(mouse=(self.x, self.y-BLOCK_SIZE))
                     if block_up:
                         block_up.liquided = False
                 else:
-                    platforms.append(Block(b.x, b.y, opp[1]))
-                    if b in uncollide_plats:
-                        uncollide_plats.remove(b)
+                    block = Block(b.x, b.y, opp[1])
+                    platforms.append(block)
+                    chunks[cur_chunk][0].append(block)
+                    if b in platforms:
+                        platforms.remove(b)
+                        try:
+                            chunks[cur_chunk][0].remove(b)
+                        except: None
                     block_up = get_block_at(mouse=(b.x, b.y-BLOCK_SIZE))
                     if block_up:
                         block_up.liquided = False
@@ -99,11 +120,17 @@ class Block:
         if block_down and block_down.type != self.type:
             if self.liquidlevel < opp[2]/(opp[2]+1):
                 if not block_left:
-                    uncollide_plats.append(Block(self.x-BLOCK_SIZE, self.y, self.type, parent=self, liquidlevel=self.liquidlevel+1/(opp[2]+1)))
+                    block = Block(self.x-BLOCK_SIZE, self.y, self.type, parent=self, liquidlevel=self.liquidlevel+1/(opp[2]+1), collide=False)
+                    platforms.append(block)
+                    chunks[cur_chunk][0].append(block)
                 if not block_right:
-                    uncollide_plats.append(Block(self.x+BLOCK_SIZE, self.y, self.type, parent=self, liquidlevel=self.liquidlevel+1/(opp[2]+1)))
+                    block = Block(self.x+BLOCK_SIZE, self.y, self.type, parent=self, liquidlevel=self.liquidlevel+1/(opp[2]+1), collide=False)
+                    platforms.append(block)
+                    chunks[cur_chunk][0].append(block)
         elif not block_down:
-            uncollide_plats.append(Block(self.x, self.y+BLOCK_SIZE, self.type, parent=self, liquidlevel=0))
+            block = Block(self.x, self.y+BLOCK_SIZE, self.type, parent=self, liquidlevel=0, collide=False)
+            platforms.append(block)
+            chunks[cur_chunk][0].append(block)
         elif block_down.type == self.type:
             block_down.liquidlevel = 0
         self.liquided = True
@@ -124,7 +151,7 @@ octaves = 4
 persistence = 0.5 
 lacunarity = 2.0
 def tree(x, ground_y):
-    global menu_platforms, uncollide_plats, menu_pos
+    global menu_platforms, menu_pos
     tree_height = random.randint(3, 6)
     leaf_radius = random.randint(2, 3)
 
@@ -193,29 +220,30 @@ background_image = pygame.transform.scale(background_image, (screen_width, scree
 txt = "Generating"
 
 def loading_screen(progress):
-    global screen
-    screen.blit(background_image, (0, 0))
+    global screen, state
+    if state == "loading":
+        screen.blit(background_image, (0, 0))
 
-    font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 18)
-    text = font.render(VERSION, True, (255, 255, 255))
-    text_rect = text.get_rect(topleft=(5, 5))
-    screen.blit(text, text_rect)
+        font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 18)
+        text = font.render(VERSION, True, (255, 255, 255))
+        text_rect = text.get_rect(topleft=(5, 5))
+        screen.blit(text, text_rect)
 
-    font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 27)
-    text = font.render(f"{txt} world...", True, (255, 255, 255))
-    text_rect = text.get_rect(center=(screen_width//2, screen_height//2-50))
-    screen.blit(text, text_rect)
+        font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 27)
+        text = font.render(f"{txt} world...", True, (255, 255, 255))
+        text_rect = text.get_rect(center=(screen_width//2, screen_height//2-50))
+        screen.blit(text, text_rect)
 
-    bar_x, bar_y, bar_width, bar_height = screen_width//4, screen_height//2, screen_width//2, 30
-    border_radius = 15
-    pygame.draw.rect(screen, (0, 0, 0), (bar_x, bar_y, bar_width, bar_height), border_radius=border_radius)
+        bar_x, bar_y, bar_width, bar_height = screen_width//4, screen_height//2, screen_width//2, 30
+        border_radius = 15
+        pygame.draw.rect(screen, (0, 0, 0), (bar_x, bar_y, bar_width, bar_height), border_radius=border_radius)
 
-    fill_width = int(bar_width * progress)
-    pygame.draw.rect(screen, (0, 255, 0), (bar_x, bar_y, fill_width, bar_height), border_radius=border_radius)
+        fill_width = int(bar_width * progress)
+        pygame.draw.rect(screen, (0, 255, 0), (bar_x, bar_y, fill_width, bar_height), border_radius=border_radius)
 
-    pygame.display.flip()
-def stateload():
-    global save, save_path, progress, platforms, uncollide_plats, txt, inv_counts, inv_items, player_x, player_y, state, loading_screen
+        pygame.display.flip()
+def stateload(WORLD_WIDTH=200, CHUNK=0):
+    global save, save_path, progress, platforms, txt, inv_counts, inv_items, player_x, player_y, state, loading_screen, health, hunger, extra_health, time, chunks, pos
     if save:
         try:
             save_path = save[0]
@@ -223,6 +251,7 @@ def stateload():
 
             plr = data_save[0].split(",")
             player_x, player_y = float(plr[0])*BLOCK_SIZE, float(plr[1])*BLOCK_SIZE-2
+            health, hunger, extra_health, time = int(plr[2]), int(plr[3]), int(plr[4]), int(plr[5])
             progress = 0.25
             loading_screen(progress)
 
@@ -272,26 +301,26 @@ def stateload():
                             type = b.split(',')[0]
                             posx = float(b.split(',')[1])
                             posy = float(b.split(',')[2])
-                            new_block = Block(posx * BLOCK_SIZE, posy * BLOCK_SIZE, type)
-                            uncollide_plats.append(new_block)
+                            new_block = Block(posx * BLOCK_SIZE, posy * BLOCK_SIZE, type, collide=False)
+                            platforms.append(new_block)
                         
             progress = 1
             loading_screen(progress)
         except:
             save = None
             save_path = None
+            player_x, player_y = 0, -BLOCK_SIZE*4
+            health, hunger, extra_health, time = 20, 20, 0, 0
             progress = 0
             platforms = []
-            uncollide_plats = []
             inv_counts = [0]*36
             inv_items = [None]*36
             txt = "ERROR file is damaged. Generating new"
     if not save:
-        WORLD_WIDTH = 750
         WORLD_HEIGHT = 96
         BEDROCK_Y = -BLOCK_SIZE*64
-        WORLD_LEFT_X = -BLOCK_SIZE * (WORLD_WIDTH // 2)
-        WORLD_RIGHT_X = BLOCK_SIZE * (WORLD_WIDTH // 2)
+        WORLD_LEFT_X = CHUNK*(BLOCK_SIZE*WORLD_WIDTH)-WORLD_WIDTH//2*BLOCK_SIZE
+        WORLD_RIGHT_X = (CHUNK+1)*BLOCK_SIZE*WORLD_WIDTH-WORLD_WIDTH//2*BLOCK_SIZE
 
         if not flat_world[0]:
             scale = 50
@@ -303,16 +332,16 @@ def stateload():
             mountain_biomes = []
             water_biomes = []
             for _ in range(random.randint(WORLD_WIDTH//300, WORLD_WIDTH//100)):
-                start = random.randint(-WORLD_WIDTH // 2, WORLD_WIDTH // 2) * BLOCK_SIZE
+                start = random.randint(WORLD_LEFT_X//BLOCK_SIZE, WORLD_RIGHT_X//BLOCK_SIZE) * BLOCK_SIZE
                 width = random.randint(10, 50) * BLOCK_SIZE
                 sand_biomes.append((start, start + width))
             for _ in range(random.randint(WORLD_WIDTH//150, WORLD_WIDTH//75)):
-                start = random.randint(-WORLD_WIDTH // 2, WORLD_WIDTH // 2) * BLOCK_SIZE
+                start = random.randint(WORLD_LEFT_X//BLOCK_SIZE, WORLD_RIGHT_X//BLOCK_SIZE) * BLOCK_SIZE
                 width = random.randint(20, 40) * BLOCK_SIZE
                 mountain_biomes.append((start, start + width))
             for _ in range(random.randint(WORLD_WIDTH // 200, WORLD_WIDTH // 100)):
                 while True:
-                    start = random.randint(-WORLD_WIDTH // 2, WORLD_WIDTH // 2) * BLOCK_SIZE
+                    start = random.randint(WORLD_LEFT_X//BLOCK_SIZE, WORLD_RIGHT_X//BLOCK_SIZE) * BLOCK_SIZE
                     width = random.randint(15, 30) * BLOCK_SIZE
                     overlap = any(start <= end_m and start + width >= start_m for start_m, end_m in mountain_biomes)
                     if not overlap:
@@ -352,7 +381,7 @@ def stateload():
                 return -depth_modifier
 
             def generate_tree(x, ground_y):
-                global platforms, uncollide_plats, pos
+                global platforms, pos
                 tree_height = random.randint(3, 6)
                 leaf_radius = random.randint(2, 3)
 
@@ -418,10 +447,10 @@ def stateload():
                 global platforms, pos, progress
                 cave_radius = 1
 
-                progress_add = 1 / (WORLD_WIDTH+20)
+                progress_add = (1/3) / (WORLD_WIDTH+20)
 
                 for _ in range(WORLD_WIDTH//15):
-                    start_x = random.randint(-WORLD_WIDTH//2, WORLD_WIDTH//2) * BLOCK_SIZE
+                    start_x = random.randint(WORLD_LEFT_X, WORLD_RIGHT_X)//BLOCK_SIZE * BLOCK_SIZE
                     start_y = random.randint(-60, -25) * BLOCK_SIZE
 
                     angle = random.uniform(0, 2 * pi)
@@ -451,7 +480,7 @@ def stateload():
 
                     progress += progress_add
                     loading_screen(progress)
-                for x in range(-WORLD_WIDTH//2, WORLD_WIDTH//2):
+                for x in range(WORLD_LEFT_X//BLOCK_SIZE, WORLD_RIGHT_X//BLOCK_SIZE):
                     for y in range(-60, -20):
                         if random.random() <= 0.0025:
                             water_x = x * BLOCK_SIZE
@@ -465,7 +494,7 @@ def stateload():
 
                             if any(neighbor not in pos for neighbor in neighbors):
                                 pos.append((water_x, water_y))
-                                uncollide_plats.append(Block(water_x, water_y, "water"))
+                                platforms.append(Block(water_x, water_y, "water", collide=False))
                         elif random.random() <= 0.0085:
                             lava_x = x * BLOCK_SIZE
                             lava_y = -(y * BLOCK_SIZE)
@@ -478,9 +507,9 @@ def stateload():
 
                             if any(neighbor not in pos for neighbor in neighbors):
                                 pos.append((lava_x, lava_y))
-                                uncollide_plats.append(Block(lava_x, lava_y, "lava"))
+                                platforms.append(Block(lava_x, lava_y, "lava", collide=False))
 
-            progress_add = 1/(WORLD_WIDTH+20)
+            progress_add = (1/3)/(WORLD_WIDTH+20)
             water = False
             water_accept = True
             for x in range(WORLD_WIDTH):
@@ -534,14 +563,13 @@ def stateload():
                         block_type = "water"
                     else:   
                         continue
-
-                    if block_type in ["water", "lava"]:
-                        if not (block_x, -block_y) in uncollide_pos and not (block_x, -block_y) in pos:
-                            uncollide_plats.append(Block(block_x, -block_y, block_type))
-                            uncollide_pos.append((block_x, -block_y))
-                    elif block_y != -3200:
-                        if not (block_x, -block_y) in pos and not (block_x, -block_y) in uncollide_pos:
-                            platforms.append(Block(block_x, -block_y, block_type))
+                    
+                    collide = True
+                    if "liquid" in blocks[block_type]:
+                        collide = False
+                    if block_y != -3200:
+                        if not (block_x, -block_y) in pos:
+                            platforms.append(Block(block_x, -block_y, block_type, collide=collide))
                             pos.append((block_x, -block_y))
                             
                         if block_type == "stone":
@@ -593,15 +621,17 @@ def stateload():
                 platforms.append(Block(i*BLOCK_SIZE, BLOCK_SIZE*8, "dirt"))
                 platforms.append(Block(i*BLOCK_SIZE, BLOCK_SIZE*9, "dirt"))
                 platforms.append(Block(i*BLOCK_SIZE, BLOCK_SIZE*10, "bedrock"))
-    state = "game"
+        chunks[CHUNK] = [platforms.copy(), pos.copy()]
+        platforms = []
+        pos = []
+        return None
 
 def b_resume():
     global menu_open
     menu_open = False
 def b_save():
-    global platforms, inv_counts, inv_items, player_x, player_y, save_path
+    global platforms, inv_counts, inv_items, player_x, player_y, save_path, health, hunger, extra_health, time
     
-    print(save_path)
     if not save_path:
         folder_selected = filedialog.askdirectory()
         if not folder_selected:
@@ -615,30 +645,62 @@ def b_save():
         filename = os.path.join(save_path)
     
     with open(filename, "w") as file:
-        file.write(f"{player_x},{player_y}")
+        file.write(f"{player_x/BLOCK_SIZE},{player_y/BLOCK_SIZE},{health},{hunger},{extra_health},{time}")
         file.write("__")
         for i in range(36):
             file.write(f"{inv_items[i]},{inv_counts[i]};")
         file.write("__")
+        default = f""
+        uncollide = f""
         for p in platforms:
-            file.write(f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};")
-        file.write("__")
-        for p in uncollide_plats:
-            file.write(f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};")
+            if p.collide:
+                default += f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};"
+            else:
+                uncollide += f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};"
+        file.write(f"{default}__{uncollide}")
 def b_exit():
-    global state, save, save_path, progress, platforms, uncollide_plats, inv_counts, inv_items, pos, uncollide_pos, player_x, player_y, menu_open
+    global state, save, save_path, progress, platforms, inv_counts, inv_items, pos, player_x, player_y, menu_open, dx, dy, chunks, cur_chunk, list_chunks, player_velocity_y, time, camera_fixation, on_ground, block_at_mouse, last_block_at_mouse, inventory_open, crafting_open, button_rects, crafting_base_count, crafting_base, result_craft, dragging_item, original_slot, doubling_item, is_rain, rain_off, raindrops, all_time, rain_update, eating_update, health_update, time_update, sum_distance, red_timer, lava_damage_timer, game_tick
     state = "menu"
+    dx, dy = 0, 0
     menu_open = False
     save = None
     save_path = None
     progress = 0
     platforms = []
-    uncollide_plats = []
     pos = []
-    uncollide_pos = []
+    list_chunks = [-1, 0, 1]
+    cur_chunk = None
+    chunks = {}
+    player_velocity_y = 0
+    time = 0
     player_x, player_y = 0, -BLOCK_SIZE*4
     inv_counts = [0]*36
     inv_items = [None]*36
+    camera_fixation = True
+    on_ground = False
+    block_at_mouse = None
+    last_block_at_mouse = None
+    inventory_open = False
+    crafting_open = False
+    button_rects = []
+    crafting_base_count = [0]*4
+    crafting_base = [None]*4
+    result_craft = [None, 0]
+    dragging_item = None
+    original_slot = None
+    doubling_item = False
+    is_rain = False
+    rain_off = False
+    raindrops = [{"x": random.randint(0, screen_width), "y": random.randint(0, screen_height)} for _ in range(screen_width//4)]
+    all_time = 0
+    rain_update = [0, 0]
+    eating_update = 0
+    health_update = 0
+    time_update = 0
+    sum_distance = 0
+    red_timer = 0
+    lava_damage_timer = 0
+    game_tick = 1000
 def b2_exit():
     global running
     running = False
@@ -650,18 +712,16 @@ def b2_controls():
     controls_open = True
 
 progress = 0
+list_chunks = [-1, 0, 1]
+cur_chunk = None
+chunks = {}
 platforms = []
-uncollide_plats = []
 pos = []
-uncollide_pos = []
 
 def get_block_at(mouse=False):
-    global platforms, uncollide_plats, mouse_pos
+    global platforms, mouse_pos
     if not mouse: mouse = mouse_pos
     for p in platforms:
-        if p.platform.collidepoint(mouse):
-            return p
-    for p in uncollide_plats:
         if p.platform.collidepoint(mouse):
             return p
     return None
@@ -678,7 +738,7 @@ def item_draw(x, y, type, count):
             block_color = (255, 0, 255)
             pygame.draw.rect(screen, block_color, (x + 5, y + 5, 40, 40))
 
-        if count > 0:
+        if int(count) > 0:
             if item_type in items and items[item_type] is not None and "strength" in items[item_type]:
                 percent = round(count/items[item_type]["strength"]*100)
                 red = max(255 - int(percent * 2.55), 0)
@@ -689,7 +749,7 @@ def item_draw(x, y, type, count):
                     filled_width = int(percent * 0.4)
                     pygame.draw.rect(screen, color, (x + 5, y + 40, filled_width, 3))
             else:
-                if count > 1:
+                if int(count) > 1:
                     font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 18)
                     count_text = font.render(str(count), True, (255, 255, 255))
                     screen.blit(count_text, (x + 35 - count_text.get_width() // 2, y + 23))
@@ -723,6 +783,20 @@ def adjust_image(image_path, target_width, target_height):
 
     return resized_image
 
+def deal_damage(num):
+    global red_timer, health, extra_health
+    if extra_health > 0:
+        extra_health -= num
+        if extra_health < 0:
+            health += extra_health
+            extra_health = 0
+    else:
+        health -= num
+    health = min(max(health, 0), 20)
+    red_timer = pygame.time.get_ticks() + 300
+
+camera_fixation = True
+
 on_ground = False
 block_at_mouse = None
 last_block_at_mouse = None
@@ -739,10 +813,31 @@ dragging_item = None
 original_slot = None
 doubling_item = False
 
+is_rain = False
+rain_off = False
+raindrops = [{"x": random.randint(0, screen_width), "y": random.randint(0, screen_height)} for _ in range(screen_width//4)]
+all_time = 0
+rain_update = [0, 0]
+eating_update = 0
 health_update = 0
+time_update = 0
+sum_distance = 0
 red_timer = 0
 lava_damage_timer = 0
 game_tick = 1000
+
+path = os.path.join(files_path, "images", f"_sys_heart2.png")
+gold_heart = pygame.image.load(path).convert_alpha()
+for pix_x in range(gold_heart.get_width()):
+    for pix_y in range(gold_heart.get_height()):
+        color = gold_heart.get_at((pix_x, pix_y))
+        r, g, b, a = color
+
+        if r > g and r > b and a > 0:
+            yellow_shade = (r, r * 0.8, 0, a)
+            gold_heart.set_at((pix_x, pix_y), yellow_shade)
+
+gold_heart = pygame.transform.scale(gold_heart, (18, 18))
 
 running = True
 while running:
@@ -786,7 +881,10 @@ while running:
                     txt = "Generating"
                     state = "loading"
                     play_open = False
-                    stateload()
+                    stateload(CHUNK=-1)
+                    stateload(CHUNK=0)
+                    e = stateload(CHUNK=1)
+                    state = "game"
                 if load_button_rect.collidepoint(mouse_pos):
                     file_path = filedialog.askopenfilename(filetypes=[("MC2 Files", "*.mc2")])
                     if file_path:
@@ -801,20 +899,21 @@ while running:
             if event.type == pygame.KEYDOWN and not menu_open:
                 if pygame.K_1 <= event.key <= pygame.K_9:
                     inv_num = event.key - pygame.K_1
+                    eating_update = pygame.time.get_ticks()
                 if event.key == WINDOW[0] and dragging_item is None:
                     if not crafting_open:
                         inventory_open = not inventory_open
                     crafting_open = False
                     if not inventory_open:
                         result_craft = (None, 0)
-                        for i, type in enumerate(crafting_base):
-                            if type is not None:
+                        for i, atype in enumerate(crafting_base):
+                            if atype is not None:
                                 ind = 0
                                 for a in range(36):
-                                    if inv_items[a] is None or (inv_items[a] == type and not (inv_items[a] in items and items[inv_items[a]] is not None and "strength" in items[inv_items[a]])):
+                                    if inv_items[a] is None or (inv_items[a] == atype and not (inv_items[a] in items and items[inv_items[a]] is not None and "strength" in items[inv_items[a]])):
                                         ind = a
                                         break
-                                inv_items[ind] = type
+                                inv_items[ind] = atype
                                 inv_counts[ind] = inv_counts[ind] + crafting_base_count[i]
                         crafting_base = [None]*4
                         crafting_base_count = [0]*4
@@ -824,6 +923,10 @@ while running:
                     block = input("Enter a block: ")
                     inv_items[inv_num] = block
                     inv_counts[inv_num] = 1024
+                if event.key == pygame.K_p:
+                    print(player_x, player_y)
+                if event.key == pygame.K_z:
+                    camera_fixation = not camera_fixation
             if menu_open and event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 for i, rect in enumerate(button_rects):
@@ -1202,6 +1305,8 @@ while running:
                                 for index in sorted([0, 1, 2, 5, 8], reverse=True):
                                     a.pop(index)
                         if a == crafting_base:
+                            if ".d" in i:
+                                i = i.split('.')[0]
                             result_craft = (i, c[1])
                             break
     if state == "menu":
@@ -1376,7 +1481,60 @@ while running:
             exit_text_rect = exit_text.get_rect(center=exit_button_rect.center)
             screen.blit(exit_text, exit_text_rect)
     elif state == "game":
-        screen.fill((135, 206, 235))
+        current_time = pygame.time.get_ticks()
+        if daylight_cycle[0]:
+            if current_time-time_update >= 50:
+                time_update = current_time
+                time = (time+1) % 24000
+                all_time += 1
+        if weather_cycle[0]:
+            if all_time % 48000 == 0:
+                is_rain = True
+                rain_off = False
+                raindrops = [{"x": random.randint(0, screen_width), "y": random.randint(0, screen_height)} for _ in range(screen_width//4)]
+                rain_update = (all_time, random.randint(6000, 12000))
+            elif all_time - rain_update[0] >= rain_update[1] and is_rain:
+                is_rain = False
+                rain_off = True
+
+        COLORS = {
+            0: (135, 206, 235),
+            12000: (255, 94, 77),
+            18000: (25, 25, 112),
+            24000: (135, 206, 235)
+        }
+        keys = sorted(COLORS.keys())
+        bg_color = (0, 0, 0)
+        for i in range(len(keys) - 1):
+            if keys[i] <= time < keys[i + 1]:
+                t = (time - keys[i]) / (keys[i + 1] - keys[i])
+                bg_color = tuple(int(COLORS[keys[i]][j] + (COLORS[keys[i + 1]][j] - COLORS[keys[i]][j]) * t) for j in range(3))
+                break
+        else:
+            bg_color = COLORS[keys[-1]]
+        screen.fill((bg_color))
+
+        if cur_chunk == None:
+            cur_chunk = 0
+            platforms = []
+            pos = []
+            for c in list_chunks:
+                platforms += chunks[c][0]
+                pos += chunks[c][1]
+        left = cur_chunk*(BLOCK_SIZE*200)-200//2*BLOCK_SIZE
+        right = (cur_chunk+1)*BLOCK_SIZE*200-200//2*BLOCK_SIZE
+        if not (left <= camera_x <= right):
+            cur_chunk = int(((camera_x + screen_width // 2 - player_width//2) + (200 // 2) * BLOCK_SIZE) // (BLOCK_SIZE * 200))
+            list_chunks = [cur_chunk - 1, cur_chunk, cur_chunk + 1]
+            platforms = []
+            pos = []
+            for c in list_chunks:
+                if not c in chunks:
+                    e = stateload(CHUNK=c)
+            for c in list_chunks:
+                platforms += chunks[c][0]
+                pos += chunks[c][1]
+
         old_height = player_height
         old_player_rect = pygame.Rect(player_x, player_y, player_width, player_height)
 
@@ -1385,7 +1543,7 @@ while running:
             if keys[SNEAK[0]]:
                 player_speed = default_speed / speed_multiplier
                 player_width, player_height = shift_width, shift_height
-            elif keys[RUN[0]]:
+            elif keys[RUN[0]] and hunger > 6:
                 player_speed = default_speed * speed_multiplier
                 player_width, player_height = default_width, default_height
             else:
@@ -1406,15 +1564,6 @@ while running:
                 p.platform.y < camera_y + screen_height
             )
         ]
-        visible_uncollide_plats = [
-            p for p in uncollide_plats
-            if (
-                p.platform.x + p.platform.width > camera_x and
-                p.platform.x < camera_x + screen_width and
-                p.platform.y + p.platform.height > camera_y and
-                p.platform.y < camera_y + screen_height
-            )
-        ]
         for p in visible_platforms:
             platform = p.platform
             if "physics" in blocks[p.type]:
@@ -1427,7 +1576,7 @@ while running:
                 if not is_supported:
                     platform.y += BLOCK_SIZE / 3
                     p.y += BLOCK_SIZE / 3
-            if player_rect.colliderect(platform):
+            if player_rect.colliderect(platform) and p.collide:
                 ignore.append(p)
                 if old_player_rect.bottom <= platform.top:
                     player_y = platform.top - player_height
@@ -1452,7 +1601,7 @@ while running:
 
                 for p in visible_platforms:
                     platform = p.platform
-                    if temp_rect.colliderect(platform) and player_y<=p.y and p not in ignore:
+                    if temp_rect.colliderect(platform) and player_y<=p.y and p not in ignore and p.collide:
                         can_move = True
                         break
 
@@ -1464,13 +1613,13 @@ while running:
                 on_ground = False
 
         in_liquid = False
-        deal_damage = False
-        for p in visible_uncollide_plats:
+        dealed_damage = False
+        for p in visible_platforms:
             platform = p.platform
-            if "liquid" in blocks[p.type] and player_rect.colliderect(platform):
+            if not p.collide and "liquid" in blocks[p.type] and player_rect.colliderect(platform):
                 in_liquid = True
                 if p.type == "lava":
-                    deal_damage = True
+                    dealed_damage = True
                 break
         if in_liquid:
             if keys[SNEAK[0]]:
@@ -1482,19 +1631,17 @@ while running:
         else:
             player_velocity_y += gravity
         dy += player_velocity_y
-        if deal_damage:
+        if dealed_damage:
             current_time = pygame.time.get_ticks()
             if current_time >= lava_damage_timer:
-                health -= 4
-                health = max(health, 0)
+                deal_damage(4)
                 lava_damage_timer = current_time + 750
-                red_timer = current_time + 300
             
         player_rect = pygame.Rect(player_x + dx, player_y, player_width, player_height)
         on_ground = False
         for p in visible_platforms:
             platform = p.platform
-            if player_rect.colliderect(platform) and p not in ignore:
+            if p.collide and player_rect.colliderect(platform) and p not in ignore:
                 if dx > 0:
                     player_x = platform.left - player_width
                     dx = 0
@@ -1505,13 +1652,11 @@ while running:
         player_rect = pygame.Rect(player_x, player_y + dy, player_width, player_height)
         for p in visible_platforms:
             platform = p.platform
-            if player_rect.colliderect(platform) and p not in ignore:
+            if p.collide and player_rect.colliderect(platform) and p not in ignore:
                 if dy > 0:
                     if abs(player_velocity_y) > ((BLOCK_SIZE*3)*2*gravity)**(1/2) and not in_liquid:
                         damage = int(abs(((player_velocity_y) ** 2) / (2 * gravity)) // 50 - 3)
-                        health -= damage
-                        health = max(health, 0)
-                        red_timer = pygame.time.get_ticks() + 300
+                        deal_damage(damage)
                     player_y = platform.top - player_height
                     player_velocity_y = 0
                     dy = 0
@@ -1521,8 +1666,15 @@ while running:
                     player_velocity_y = 0
                     dy = 0
 
-        player_x += dx
-        player_y += dy
+        if camera_fixation:
+            player_x += dx
+            player_y += dy
+
+            sum_distance += sqrt(dx**2+dy**2) * (1+int(keys[RUN[0]]))
+            if sum_distance >= 80*BLOCK_SIZE:
+                sum_distance -= 80*BLOCK_SIZE
+                hunger -= 1
+                hunger = max(hunger, 0)
 
         if player_y > -BEDROCK_Y or health == 0:
             player_x = 0
@@ -1533,46 +1685,57 @@ while running:
                 inv_counts = [0]*36
                 inv_items = [None]*36
 
-        camera_x = player_x - screen_width // 2 + player_width//2
-        camera_y = player_y - screen_height // 2 + player_height//2
+        if camera_fixation:
+            camera_x = player_x - screen_width // 2 + player_width//2
+            camera_y = player_y - screen_height // 2 + player_height//2
+        else:
+            if keys[pygame.K_LEFT]:
+                camera_x -= screen_height//30
+            if keys[pygame.K_RIGHT]:
+                camera_x += screen_height//30
+            if keys[pygame.K_UP]:
+                camera_y -= screen_height//30
+            if keys[pygame.K_DOWN]:
+                camera_y += screen_height//30
 
         player_image_path = os.path.join(files_path, "images", "steve.png")
         player_image = pygame.image.load(player_image_path)
         player_image = pygame.transform.scale(player_image, (player_width, player_height))
 
-        current_time = pygame.time.get_ticks()
         if red_timer > current_time:
             red_overlay = pygame.Surface(player_image.get_size(), flags=pygame.SRCALPHA)
             red_overlay.fill((128, 0, 0))
             player_image.blit(red_overlay, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
         liquid_updating = []
-        for p in reversed(visible_uncollide_plats):
+        for p in reversed(visible_platforms):
             platform = p.platform
-            image_path = os.path.join(files_path, "images", f"{p.type}.png")
-            
-            if os.path.exists(image_path):
-                texture = pygame.image.load(image_path)
-                texture = pygame.transform.scale(texture, (platform.width, platform.height))
-                crop = round(p.liquidlevel * BLOCK_SIZE)
-                texture = texture.subsurface((0, crop, platform.width, texture.get_height() - crop))
-                screen.blit(texture, (platform.x - camera_x, platform.y - camera_y + crop))
-            else:
-                pygame.draw.rect(screen, (255, 0, 255), 
-                                (platform.x - camera_x, platform.y - camera_y + round(p.liquidlevel*BLOCK_SIZE), platform.width, platform.height-round(p.liquidlevel*BLOCK_SIZE)))
+            if not p.collide:
+                image_path = os.path.join(files_path, "images", f"{p.type}.png")
                 
-            if "liquid" in blocks[p.type]:
-                if current_time - blocks[p.type]["liquid"][1] >= blocks[p.type]["liquid"][0]*1000:
-                    if not p.liquided:
-                        p.liquid()
-                    elif p.parent:
-                        if not p.parent in uncollide_plats:
-                            if p in uncollide_plats:
-                                uncollide_plats.remove(p)
-                    if not p.type in liquid_updating:
-                        liquid_updating.append(p.type)
-            else:
-                darken = darken_surface(texture, 0.5)
-                screen.blit(darken, (platform.x - camera_x, platform.y - camera_y))
+                if os.path.exists(image_path):
+                    texture = pygame.image.load(image_path)
+                    texture = pygame.transform.scale(texture, (platform.width, platform.height))
+                    crop = round(p.liquidlevel * BLOCK_SIZE)
+                    texture = texture.subsurface((0, crop, platform.width, texture.get_height() - crop))
+                    screen.blit(texture, (platform.x - camera_x, platform.y - camera_y + crop))
+                else:
+                    pygame.draw.rect(screen, (255, 0, 255), 
+                                    (platform.x - camera_x, platform.y - camera_y + round(p.liquidlevel*BLOCK_SIZE), platform.width, platform.height-round(p.liquidlevel*BLOCK_SIZE)))
+                    
+                if "liquid" in blocks[p.type]:
+                    if current_time - blocks[p.type]["liquid"][1] >= blocks[p.type]["liquid"][0]*1000:
+                        if not p.liquided:
+                            p.liquid()
+                        elif p.parent:
+                            if not p.parent in platforms:
+                                if p in platforms:
+                                    platforms.remove(p)
+                        if not p.type in liquid_updating:
+                            liquid_updating.append(p.type)
+                # else:
+                #     darken = darken_surface(texture, 0.5)
+                #     screen.blit(darken, (platform.x - camera_x, platform.y - camera_y))
+                    
         for u in liquid_updating:
             blocks[u]["liquid"][1] = current_time
 
@@ -1580,15 +1743,16 @@ while running:
         
         for p in visible_platforms:
             platform = p.platform
-            image_path = os.path.join(files_path, "images", f"{p.type}.png")
-            
-            if os.path.exists(image_path):
-                texture = pygame.image.load(image_path)
-                texture = pygame.transform.scale(texture, (platform.width, platform.height))
-                screen.blit(texture, (platform.x - camera_x, platform.y - camera_y))
-            else:
-                pygame.draw.rect(screen, (255, 0, 255), 
-                                (platform.x - camera_x, platform.y - camera_y, platform.width, platform.height))
+            if p.collide:
+                image_path = os.path.join(files_path, "images", f"{p.type}.png")
+                
+                if os.path.exists(image_path):
+                    texture = pygame.image.load(image_path)
+                    texture = pygame.transform.scale(texture, (platform.width, platform.height))
+                    screen.blit(texture, (platform.x - camera_x, platform.y - camera_y))
+                else:
+                    pygame.draw.rect(screen, (255, 0, 255), 
+                                    (platform.x - camera_x, platform.y - camera_y, platform.width, platform.height))
 
         if not menu_open:
             mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -1607,11 +1771,11 @@ while running:
             mouse_buttons = pygame.mouse.get_pressed()
             if mouse_buttons[0] and not (inventory_open or crafting_open):
                 if block_at_mouse is not None and blocks[block_at_mouse.type]["break"] != float('inf'):
-                    type = inv_items[inv_num]
+                    btype = inv_items[inv_num]
                     doubler=1
                     
                     for breaktool in mining.keys():
-                        if type is not None and breaktool in type and sum([int(b in block_at_mouse.type) for b in mining[breaktool]]) > 0:
+                        if btype is not None and breaktool in btype and sum([int(b in block_at_mouse.type) for b in mining[breaktool]]) > 0:
                             doubler = items[type]["dig"]
                             break
 
@@ -1620,7 +1784,7 @@ while running:
 
                     break_progress = min(block_at_mouse.breaktime / ((blocks[block_at_mouse.type]["break"]*2/doubler) * FPS), 1.0)
                     scale_factor = 1 + break_progress * 0.5
-                    if block_at_mouse in uncollide_plats and not "liquid" in blocks[block_at_mouse.type]:
+                    if not block_at_mouse.collide and not "liquid" in blocks[block_at_mouse.type]:
                         break_progress = min(block_at_mouse.breaktime / ((blocks[block_at_mouse.type]["break"]*2/doubler) * FPS)+0.25, 1.0)
                     block_width = block_height = BLOCK_SIZE * scale_factor
 
@@ -1648,11 +1812,24 @@ while running:
             if mouse_buttons[2] and not (inventory_open or crafting_open):
                 t = inv_items[inv_num]
                 if t is not None:
-                    if t == "bucket":
+                    if t in items and "hunger" in items[t]:
+                        if current_time - eating_update >= 1600 and (hunger < 20 or t == "golden_apple"):
+                            hunger += items[t]["hunger"]
+                            hunger = min(hunger, 20)
+                            inv_counts[inv_num] -= 1
+                            if inv_counts[inv_num] <= 0:
+                                inv_items[inv_num] = None
+                            if t == "golden_apple":
+                                extra_health += 4
+                            eating_update = current_time
+                    elif t == "bucket":
                         if block_at_mouse and "liquid" in blocks[block_at_mouse.type]:
                             inv_items[inv_num] = block_at_mouse.type + "_bucket"
-                            if block_at_mouse in uncollide_plats:
-                                uncollide_plats.remove(block_at_mouse)
+                            if not block_at_mouse.collide:
+                                platforms.remove(block_at_mouse)
+                                try:
+                                    chunks[cur_chunk][0].remove(block_at_mouse)
+                                except: None
                     elif block_at_mouse is None or ("liquid" in blocks[block_at_mouse.type] and block_at_mouse.type != t and (block_at_mouse.type != items[t]["block"] if t in items and "block" in items[t] else True)):
                         remain = None
                         if t in items and "block" in items[t]:
@@ -1661,15 +1838,19 @@ while running:
                             t = items[t]["block"]
                         if t in blocks:
                             if not pygame.Rect(block_x, block_y, BLOCK_SIZE, BLOCK_SIZE).colliderect(player_rect):
-                                if block_at_mouse in uncollide_plats:
-                                    uncollide_plats.remove(block_at_mouse)
-                                new_block = Block(block_x, block_y, t)
+                                if block_at_mouse is not None and not block_at_mouse.collide:
+                                    platforms.remove(block_at_mouse)
+                                    try:
+                                        chunks[cur_chunk][0].remove(block_at_mouse)
+                                    except: None
                                 if not "liquid" in blocks[t] and not keys[BACK_BUILD[0]]:
-                                    platforms.append(new_block)
-                                    pos.append((block_x, block_y))
+                                    new_block = Block(block_x, block_y, t)
                                 else:
-                                    uncollide_plats.append(new_block)
-                                    uncollide_pos.append((block_x, block_y))
+                                    new_block = Block(block_x, block_y, t, collide=False)
+                                platforms.append(new_block)
+                                pos.append((block_x, block_y))
+                                chunks[cur_chunk][0].append(new_block)
+                                chunks[cur_chunk][1].append((block_x, block_y))
                                 block_up = get_block_at(mouse=(block_x, block_y-BLOCK_SIZE))
                                 if block_up:
                                     block_up.liquided = False
@@ -1682,15 +1863,32 @@ while running:
                                             inv_items[i] = remain
                                             inv_counts[i] = 1
                                             break
+            else:
+                eating_update = current_time
 
             if hunger == 20 and health < 20:
                 if current_time - health_update >= game_tick:
                     health += 1
+                    health = min(health, 20)
                     health_update = current_time
             elif hunger == 0:
                 if current_time - health_update >= game_tick:
-                    health -= 1
+                    deal_damage(1)
                     health_update = current_time
+            elif extra_health > 0:
+                if current_time - health_update >= 3000:
+                    extra_health -= 2
+                    extra_health = max(extra_health, 0)
+                    health_update = current_time
+
+        if is_rain or rain_off:
+            for drop in raindrops:
+                pygame.draw.line(screen, (193, 205, 217), (drop["x"], drop["y"]), (drop["x"], drop["y"] + screen_height//60), screen_width//400)
+                drop["y"] += 50
+
+                if drop["y"] > screen_height and is_rain:
+                    drop["y"] = random.randint(0, screen_height//15)
+                    drop["x"] = random.randint(0, screen_width)
 
         inventory_width = 9 * 50
         y = screen_height - 100
@@ -1713,6 +1911,29 @@ while running:
             else:
                 block_color = (255, 0, 255)
                 pygame.draw.rect(screen, block_color, (x, y_offset, 18, 18))
+
+        for i in range(10):
+            x = 8 + start_x + 416 - 20*i
+            y_offset = y - 20
+            if hunger - i * 2 >= 2:
+                level = 2
+            elif hunger - i * 2 == 1:
+                level = 1
+            else:
+                level = 0
+            path = os.path.join(files_path, "images", f"_sys_hunger{level}.png")
+            if os.path.exists(path):
+                item_image = pygame.image.load(path)
+                item_image = pygame.transform.scale(item_image, (18, 18))
+                screen.blit(item_image, (x, y_offset))
+            else:
+                block_color = (255, 0, 255)
+                pygame.draw.rect(screen, block_color, (x, y_offset, 18, 18))
+        
+        for i in range(round(extra_health/2)):
+            x = 8 + start_x + 20*(i%10)
+            y_offset = y - 40 - 20*(i//10)
+            screen.blit(gold_heart, (x, y_offset))
 
         if inventory_open or crafting_open:
             if inventory_open:
