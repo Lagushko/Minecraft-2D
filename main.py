@@ -1,9 +1,9 @@
-import random, noise, os
+import random, noise
 from math import sin, cos, sqrt, pi
 from tkinter import filedialog
+from deep_translator import GoogleTranslator
 from settings import *
 
-files_path = str(os.path.dirname(os.path.abspath(__file__)))
 clock = pygame.time.Clock()
 state = "menu"
 FPS = 25
@@ -23,14 +23,14 @@ class Block:
         self.liquided = False
         self.liquidlevel = liquidlevel
         self.parent = parent
-    def breaking(self, time):
-        global mouse_pos, platforms, inv_counts, inv_items, inv_num, chunks, cur_chunk
+    def breaking(self, endtime):
+        global mouse_pos, platforms, inventory, inv_num, chunks, cur_chunk, creative_mode, vol_sound
         if mouse_pos != (self.x, self.y):
             self.broke = False
             self.breaktime = 0
         if self.broke:
-            self.breaktime += 1
-        if self.breaktime >= time * FPS:
+            self.breaktime += 1  
+        if self.breaktime >= endtime * FPS or creative_mode[0]:
             count = 1
             if "drop" in blocks[self.type]:
                 if len(blocks[self.type]["drop"]) > 1 and type(blocks[self.type]["drop"][0]) is list:
@@ -40,20 +40,17 @@ class Block:
                     drop = random.choice(blocks[self.type]["drop"])
             else:
                 drop = self.type
-            if "notooldrop" in blocks[self.type]:
-                notooldrop = random.choice(blocks[self.type]["notooldrop"])
-            else:
-                notooldrop = False
-            if "tools" in blocks[self.type]:
-                tools = str(blocks[self.type]["tools"])
-            else:
-                tools = str(inv_items[inv_num])
-            if "exc" in blocks[self.type]:
-                exc = blocks[self.type]["exc"]
-            else:
-                exc = ""
+            notooldrop = random.choice(blocks[self.type].get("notooldrop", [None])) or False
+            tools = str(blocks[self.type].get("tools", inventory[inv_num][0]))
+            exc = blocks[self.type].get("exc", "")
             if self in platforms:
                 platforms.remove(self)
+                if "sound" in blocks[self.type] and blocks[self.type]["sound"][0] != None:
+                    sound = blocks[self.type]["sound"][0] + str(random.randint(1, 4))
+                    sound_path = os.path.join(files_path, "sounds", "dig", f"{sound}.ogg")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
                 try:
                     chunks[cur_chunk][0].remove(self)
                 except: None
@@ -62,25 +59,30 @@ class Block:
                 if b:
                     b.liquided = False
             self.broke = False
-            if (tools in str(inv_items[inv_num]) and not str(inv_items[inv_num]) in exc) or notooldrop is not False:
-                if notooldrop is not False and not (tools in str(inv_items[inv_num]) and not str(inv_items[inv_num]) in exc):
+            if ((tools in str(inventory[inv_num][0]) and not str(inventory[inv_num][0]) in exc) or notooldrop is not False) and not creative_mode[0]:
+                if notooldrop is not False and not (tools in str(inventory[inv_num][0]) and not str(inventory[inv_num][0]) in exc):
                     drop = notooldrop
                 if drop is not None:
-                    if drop in inv_items:
-                        inv_counts[inv_items.index(drop)] += count
+                    if any(drop in sublist for sublist in inventory):
+                        inventory[next(i for i, sublist in enumerate(inventory) if drop in sublist)][1] += count
                     else:
-                        if inv_items.count(None) > 0:
+                        if inventory.count([None, 0]) > 0:
                             ind = 0
-                            for i, a in enumerate(inv_items):
-                                if a == None:
+                            for i, a in enumerate(inventory):
+                                if a[0] == None:
                                     ind = i
                                     break
-                            inv_items[ind] = drop
-                            inv_counts[ind] = count
-            if inv_items[inv_num] is not None and any(key in inv_items[inv_num] for key in mining.keys()):
-                inv_counts[inv_num]-=1
-                if inv_counts[inv_num] == 0:
-                    inv_items[inv_num] = None 
+                            inventory[ind] = [drop, count]
+            if inventory[inv_num][0] is not None and any(key in inventory[inv_num][0] for key in mining.keys()):
+                inventory[inv_num][1] -= 1
+                if inventory[inv_num][1] == 0:
+                    inventory[inv_num][0] = None 
+        elif endtime * FPS // 5 > 0:
+            if self.breaktime % (endtime * FPS // 5) == 0:
+                if "sound" in blocks[self.type] and blocks[self.type]["sound"][2] != None and False:
+                    sound = blocks[self.type]["sound"][2] + str(random.randint(1, 4))
+                    sound_path = os.path.join(files_path, "sounds", "dig", f"{sound}.ogg")
+                    pygame.mixer.Sound(sound_path).play()
     def liquid(self):
         global platforms, chunks, cur_chunk
         opp = ("water", "cobblestone", 3) if self.type == "lava" else ("lava", "obsidian", 7)
@@ -88,9 +90,10 @@ class Block:
         block_left = get_block_at(mouse=(self.x-BLOCK_SIZE, self.y))
         block_right = get_block_at(mouse=(self.x+BLOCK_SIZE, self.y))
         for b in [block_down, block_left, block_right]:
-            if b and b.type == opp[0]:
-                if self.type == "lava": 
-                    block = Block(self.x, self.y, opp[1])
+            if b and (b.type == opp[0] or (self.type=="lava" and b.type=="ice")):
+                if self.type == "lava":
+                    if b.type == "ice": block = Block(self.x, self.y, "soul_sand")
+                    else:block = Block(self.x, self.y, opp[1])
                     platforms.append(block)
                     chunks[cur_chunk][0].append(block)
                     if self in platforms:
@@ -202,6 +205,10 @@ save = None
 save_path = None
 play_open = False
 controls_open = False
+languages_open = False
+sounds_open = False
+settings_open = False
+scroll = 0
 
 waiting_for_key = False
 current_key = None
@@ -210,8 +217,7 @@ current_key_name = None
 camera_x, camera_y = 0, 0
 mouse_pos = (0, 0)
 
-inv_counts = [0] * 36
-inv_items = [None] * 36
+inventory = [[None, 0] for _ in range(36)]
 inv_num = 0
 
 background_path = os.path.join(files_path, "images", "_sys_loadbackground.png")
@@ -230,7 +236,7 @@ def loading_screen(progress):
         screen.blit(text, text_rect)
 
         font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 27)
-        text = font.render(f"{txt} world...", True, (255, 255, 255))
+        text = font.render(f"{translated.get(f"{txt} world", f"{txt} world")}...", True, (255, 255, 255))
         text_rect = text.get_rect(center=(screen_width//2, screen_height//2-50))
         screen.blit(text, text_rect)
 
@@ -243,9 +249,11 @@ def loading_screen(progress):
 
         pygame.display.flip()
 def stateload(WORLD_WIDTH=200, CHUNK=0):
-    global save, save_path, progress, platforms, txt, inv_counts, inv_items, player_x, player_y, state, loading_screen, health, hunger, extra_health, time, chunks, pos
+    global save, save_path, progress, platforms, txt, inventory, player_x, player_y, state, loading_screen, health, hunger, extra_health, time, chunks, pos
     if save:
         try:
+            if not ("__" in save[1] and "!" in save[1] and ";" in save[1]):
+                raise ValueError()
             save_path = save[0]
             data_save = save[1].split("__")
 
@@ -262,60 +270,84 @@ def stateload(WORLD_WIDTH=200, CHUNK=0):
                         item = i.split(',')[0]
                         count = int(i.split(',')[1])
                         if count > 0:
-                            inv_items[num] = item
-                            inv_counts[num] = count
+                            inventory[num] = [item, count]
                         progress += (1/4)/36
                         loading_screen(progress)
             progress = 0.5
             loading_screen(progress)
 
             if len(data_save[2]) > 0:
+                chunk_data = data_save[2].split("!")
+                current_chunk = None
                 batch_size = 1000
 
-                ablocks = data_save[2].split(";")
-                total_ablocks = len(ablocks)
+                for i in range(0, len(chunk_data), batch_size):
+                    batch = chunk_data[i:i + batch_size]
+                    for entry in batch:
+                        if entry == "":
+                            continue
 
-                for i in range(0, total_ablocks, batch_size):
-                    batch = ablocks[i:i + batch_size]
-                    for b in batch:
-                        if b:
-                            type = b.split(',')[0]
-                            posx = float(b.split(',')[1])
-                            posy = float(b.split(',')[2])
-                            new_block = Block(posx * BLOCK_SIZE, posy * BLOCK_SIZE, type)
-                            platforms.append(new_block)
+                        if entry.isdigit() or (entry.startswith("-") and entry[1:].isdigit()):
+                            current_chunk = int(entry)
+                            if current_chunk not in chunks:
+                                chunks[current_chunk] = [[], []]
+                        else:
+                            ablocks = entry.split(";")
+                            for b in ablocks:
+                                if b:
+                                    type = b.split(',')[0]
+                                    posx = float(b.split(',')[1])
+                                    posy = float(b.split(',')[2])
+
+                                    new_block = Block(posx * BLOCK_SIZE, posy * BLOCK_SIZE, type)
+                                    chunks[current_chunk][0].append(new_block)
+                                    chunks[current_chunk][1].append((posx * BLOCK_SIZE, posy * BLOCK_SIZE))
                         
             progress = 0.75
             loading_screen(progress)
                 
             if len(data_save[3]) > 0:
-                batch_size = 1000
+                chunk_data = data_save[3].split("!")
+                current_chunk = None
 
-                unc_ablocks = data_save[3].split(";")
-                unc_total_ablocks = len(unc_ablocks)
+                for i in range(0, len(chunk_data), batch_size):
+                    batch = chunk_data[i:i + batch_size]
+                    for entry in batch:
+                        if entry == "":
+                            continue
 
-                for i in range(0, unc_total_ablocks, batch_size):
-                    batch = unc_ablocks[i:i + batch_size]
-                    for b in batch:
-                        if b:
-                            type = b.split(',')[0]
-                            posx = float(b.split(',')[1])
-                            posy = float(b.split(',')[2])
-                            new_block = Block(posx * BLOCK_SIZE, posy * BLOCK_SIZE, type, collide=False)
-                            platforms.append(new_block)
+                        if entry.isdigit() or (entry.startswith("-") and entry[1:].isdigit()):
+                            current_chunk = int(entry)
+                            if current_chunk not in chunks:
+                                chunks[current_chunk] = [[], []]
+                        else:
+                            ablocks = entry.split(";")
+                            for b in ablocks:
+                                if b:
+                                    type = b.split(',')[0]
+                                    posx = float(b.split(',')[1])
+                                    posy = float(b.split(',')[2])
+
+                                    new_block = Block(posx * BLOCK_SIZE, posy * BLOCK_SIZE, type, collide=False)
+                                    chunks[current_chunk][0].append(new_block)
+                                    chunks[current_chunk][1].append((posx * BLOCK_SIZE, posy * BLOCK_SIZE))
                         
             progress = 1
             loading_screen(progress)
+            state = "game"
         except:
             save = None
             save_path = None
             player_x, player_y = 0, -BLOCK_SIZE*4
             health, hunger, extra_health, time = 20, 20, 0, 0
             progress = 0
-            platforms = []
-            inv_counts = [0]*36
-            inv_items = [None]*36
+            chunks = {}
+            inventory = [[None, 0]]*36
             txt = "ERROR file is damaged. Generating new"
+            stateload(-1)
+            stateload(0)
+            stateload(1)
+            state = "game"
     if not save:
         WORLD_HEIGHT = 96
         BEDROCK_Y = -BLOCK_SIZE*64
@@ -630,7 +662,7 @@ def b_resume():
     global menu_open
     menu_open = False
 def b_save():
-    global platforms, inv_counts, inv_items, player_x, player_y, save_path, health, hunger, extra_health, time
+    global chunks, inventory, player_x, player_y, save_path, health, hunger, extra_health, time
     
     if not save_path:
         folder_selected = filedialog.askdirectory()
@@ -648,23 +680,30 @@ def b_save():
         file.write(f"{player_x/BLOCK_SIZE},{player_y/BLOCK_SIZE},{health},{hunger},{extra_health},{time}")
         file.write("__")
         for i in range(36):
-            file.write(f"{inv_items[i]},{inv_counts[i]};")
+            file.write(f"{inventory[i][0]},{inventory[i][1]};")
         file.write("__")
         default = f""
         uncollide = f""
-        for p in platforms:
-            if p.collide:
-                default += f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};"
-            else:
-                uncollide += f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};"
+        for num, chunk in chunks.items():
+            default += f"!{num}!"
+            uncollide += f"!{num}!"
+            for p in chunk[0]:
+                if p.collide:
+                    default += f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};"
+                else:
+                    uncollide += f"{p.type},{p.x//BLOCK_SIZE},{p.y//BLOCK_SIZE};"
         file.write(f"{default}__{uncollide}")
 def b_exit():
-    global state, save, save_path, progress, platforms, inv_counts, inv_items, pos, player_x, player_y, menu_open, dx, dy, chunks, cur_chunk, list_chunks, player_velocity_y, time, camera_fixation, on_ground, block_at_mouse, last_block_at_mouse, inventory_open, crafting_open, button_rects, crafting_base_count, crafting_base, result_craft, dragging_item, original_slot, doubling_item, is_rain, rain_off, raindrops, all_time, rain_update, eating_update, health_update, time_update, sum_distance, red_timer, lava_damage_timer, game_tick
+    global state, save, save_path, progress, platforms, inventory, pos, player_x, player_y, menu_open, dx, dy, chunks, cur_chunk, list_chunks, player_velocity_y, time, camera_fixation, on_ground, block_at_mouse, last_block_at_mouse, inventory_open, crafting_open, button_rects, crafting_base_count, crafting_base, result_craft, dragging_item, original_slot, doubling_item, is_rain, rain_off, raindrops, all_time, rain_update, eating_update, health_update, time_update, sum_distance, red_timer, lava_damage_timer, game_tick, health, hunger, extra_health, time
     state = "menu"
     dx, dy = 0, 0
     menu_open = False
     save = None
     save_path = None
+    health = 20
+    hunger = 20
+    extra_health = 0
+    time = 0
     progress = 0
     platforms = []
     pos = []
@@ -674,8 +713,7 @@ def b_exit():
     player_velocity_y = 0
     time = 0
     player_x, player_y = 0, -BLOCK_SIZE*4
-    inv_counts = [0]*36
-    inv_items = [None]*36
+    inventory = [[None, 0] for _ in range(36)]
     camera_fixation = True
     on_ground = False
     block_at_mouse = None
@@ -701,6 +739,7 @@ def b_exit():
     red_timer = 0
     lava_damage_timer = 0
     game_tick = 1000
+
 def b2_exit():
     global running
     running = False
@@ -708,8 +747,21 @@ def b2_play():
     global play_open
     play_open = True
 def b2_controls():
-    global controls_open
+    global controls_open, settings_open
     controls_open = True
+    settings_open = False
+def b2_languages():
+    global languages_open, settings_open
+    languages_open = True
+    settings_open = False
+def b2_sounds():
+    global sounds_open, settings_open
+    sounds_open = True
+    settings_open = False
+
+def b2_settings():
+    global settings_open
+    settings_open = True
 
 progress = 0
 list_chunks = [-1, 0, 1]
@@ -722,8 +774,13 @@ def get_block_at(mouse=False):
     global platforms, mouse_pos
     if not mouse: mouse = mouse_pos
     for p in platforms:
-        if p.platform.collidepoint(mouse):
-            return p
+        if p.collide:
+            if p.platform.collidepoint(mouse):
+                return p
+    for p in platforms:
+        if not p.collide:
+            if p.platform.collidepoint(mouse):
+                return p
     return None
 
 def item_draw(x, y, type, count):
@@ -795,7 +852,22 @@ def deal_damage(num):
     health = min(max(health, 0), 20)
     red_timer = pygame.time.get_ticks() + 300
 
+def translate_game():
+    global translated, translator, language
+    text_to_translate = "\n".join(translated.keys())
+    translator = GoogleTranslator(source='en', target=language)
+    translated_text = translator.translate(text_to_translate)
+    translated_texts = translated_text.split("\n")
+    for original, new_text in zip(translated.keys(), translated_texts):
+        translated[original] = new_text
+
+translate_game()
+
 camera_fixation = True
+is_flying = False
+jump_pressed = False
+last_jump_time = 0
+double_jump_delay = 300
 
 on_ground = False
 block_at_mouse = None
@@ -817,16 +889,18 @@ is_rain = False
 rain_off = False
 raindrops = [{"x": random.randint(0, screen_width), "y": random.randint(0, screen_height)} for _ in range(screen_width//4)]
 all_time = 0
-rain_update = [0, 0]
+rain_update = [0, 0, 0]
 eating_update = 0
 health_update = 0
+splash_update = 0
 time_update = 0
 sum_distance = 0
+x_distance = 0
 red_timer = 0
 lava_damage_timer = 0
 game_tick = 1000
 
-path = os.path.join(files_path, "images", f"_sys_heart2.png")
+path = os.path.join(files_path, "images", "_sys_heart2.png")
 gold_heart = pygame.image.load(path).convert_alpha()
 for pix_x in range(gold_heart.get_width()):
     for pix_y in range(gold_heart.get_height()):
@@ -838,6 +912,51 @@ for pix_x in range(gold_heart.get_width()):
             gold_heart.set_at((pix_x, pix_y), yellow_shade)
 
 gold_heart = pygame.transform.scale(gold_heart, (18, 18))
+
+for name in blocks.keys():
+    if "liquid" in blocks[name]:
+        continue
+    path = os.path.join(files_path, "images", f"{name}.png")
+
+    if os.path.exists(path):
+        texture = pygame.image.load(path).convert_alpha()
+
+        for pix_x in range(texture.get_width()):
+            for pix_y in range(texture.get_height()):
+                color = texture.get_at((pix_x, pix_y))
+                r, g, b, a = color
+                if a > 0:
+                    darker_shade = (max(0, r * 0.65), max(0, g * 0.65), max(0, b * 0.65), a)
+                    texture.set_at((pix_x, pix_y), darker_shade)
+
+        texture = pygame.transform.scale(texture, (BLOCK_SIZE, BLOCK_SIZE))
+        blocks[name]["back"] = texture
+
+sound_path = os.path.join(files_path, "sounds", "background.mp3")
+backmusic = pygame.mixer.Sound(sound_path)
+backmusic.play(loops=-1)
+backmusic.set_volume(0.5*vol_music)
+
+lava_play = False
+sound_path = os.path.join(files_path, "sounds", "lava.mp3")
+lavasound = pygame.mixer.Sound(sound_path)
+lavasound.play(loops=-1)
+lavasound.set_volume(0.0)
+
+water_play = False
+sound_path = os.path.join(files_path, "sounds", "water.mp3")
+watersound = pygame.mixer.Sound(sound_path)
+watersound.play(loops=-1)
+watersound.set_volume(0.0)
+
+sound_path = os.path.join(files_path, "sounds", "rain1.wav")
+rainsound = pygame.mixer.Sound(sound_path)
+rainplay = False
+
+eat = False
+sound_path = os.path.join(files_path, "sounds", "splash1.mp3")
+splashsound = pygame.mixer.Sound(sound_path)
+splashplay = False
 
 running = True
 while running:
@@ -853,31 +972,116 @@ while running:
                         current_key[0] = event.key
                         waiting_for_key = False
                 continue
-            if not play_open and not controls_open and event.type == pygame.MOUSEBUTTONDOWN:
+            if not any([controls_open, settings_open, play_open, languages_open, sounds_open]) and event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 for i, rect in enumerate(mbutton_rects):
                     if rect.collidepoint(mouse_pos):
+                        sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
                         button_function = list(mbuttons.values())[i]
                         button_function()
             elif controls_open and event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 for i, rect in enumerate(c_button_rects):
                     if rect.collidepoint(mouse_pos):
+                        sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
                         waiting_for_key = True
                         current_key = list(c_buttons.values())[i]
                         current_key_name = list(c_buttons.keys())[i]
                         break
                 if exit_button_rect.collidepoint(mouse_pos):
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
                     controls_open = False
+                    b2_settings()
+            elif settings_open and event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_pos = pygame.mouse.get_pos()
+                for i, rect in enumerate(sbutton_rects):
+                    if rect.collidepoint(mouse_pos):
+                        sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
+                        button_function = list(sbuttons.values())[i]
+                        button_function()
+                if exit_button_rect.collidepoint(mouse_pos):
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
+                    settings_open = False
+            elif languages_open and event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1 or event.button == 3:
+                    mouse_pos = pygame.mouse.get_pos()
+                    for i, rect in enumerate(lbutton_rects):
+                        if rect.collidepoint(mouse_pos) and 50 <= rect.y <= screen_height-150:
+                            sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                            sound = pygame.mixer.Sound(sound_path)
+                            sound.set_volume(vol_sound)
+                            sound.play()
+                            language = list(lbuttons.values())[i]
+                            translate_game()
+                    if exit_button_rect.collidepoint(mouse_pos):
+                        sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
+                        languages_open = False
+                        b2_settings()
+            elif languages_open and event.type == pygame.MOUSEWHEEL:
+                scroll += event.y*14
+                scroll = max(min(scroll, 0), -(70*len(lbuttons)+70)+screen_height-150)
+            elif sounds_open and event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_pos = pygame.mouse.get_pos()
+                for i, rect in enumerate(msbutton_rects):
+                    if rect.collidepoint(mouse_pos):
+                        sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
+                        percent = (mouse_pos[0] - rect.left - 5) / (rect.width - 10)
+                        percent = max(0, min(1, percent))
+                        if i == 0:
+                            vol_music = percent
+                            backmusic.set_volume(0.25*vol_music)
+                        elif i == 1:
+                            vol_sound = percent
+                        
+                if exit_button_rect.collidepoint(mouse_pos):
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
+                    sounds_open = False
+                    b2_settings()
             elif play_open and event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 for i, rect in enumerate(p_button_rects):
                     if rect.collidepoint(mouse_pos):
+                        sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
                         key = list(p_buttons.keys())[i]
                         p_buttons[key][0] = not p_buttons[key][0]
                 if exit_button_rect.collidepoint(mouse_pos):
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
                     play_open = False
                 if generate_button_rect.collidepoint(mouse_pos):
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
                     txt = "Generating"
                     state = "loading"
                     play_open = False
@@ -886,6 +1090,10 @@ while running:
                     e = stateload(CHUNK=1)
                     state = "game"
                 if load_button_rect.collidepoint(mouse_pos):
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
                     file_path = filedialog.askopenfilename(filetypes=[("MC2 Files", "*.mc2")])
                     if file_path:
                         with open(file_path, 'r') as f:
@@ -901,6 +1109,10 @@ while running:
                     inv_num = event.key - pygame.K_1
                     eating_update = pygame.time.get_ticks()
                 if event.key == WINDOW[0] and dragging_item is None:
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
                     if not crafting_open:
                         inventory_open = not inventory_open
                     crafting_open = False
@@ -910,34 +1122,44 @@ while running:
                             if atype is not None:
                                 ind = 0
                                 for a in range(36):
-                                    if inv_items[a] is None or (inv_items[a] == atype and not (inv_items[a] in items and items[inv_items[a]] is not None and "strength" in items[inv_items[a]])):
+                                    if inventory[a][0] is None or (inventory[a][0] == atype and not (inventory[a][0] in items and items[inventory[a][0]] is not None and "strength" in items[inventory[a][0]])):
                                         ind = a
                                         break
-                                inv_items[ind] = atype
-                                inv_counts[ind] = inv_counts[ind] + crafting_base_count[i]
+                                inventory[ind] = [atype, inventory[ind][1] + crafting_base_count[i]]
                         crafting_base = [None]*4
                         crafting_base_count = [0]*4
                 if event.key == MENU[0]:
+                    sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                    sound = pygame.mixer.Sound(sound_path)
+                    sound.set_volume(vol_sound)
+                    sound.play()
                     menu_open = True
-                if event.key == pygame.K_t:
-                    block = input("Enter a block: ")
-                    inv_items[inv_num] = block
-                    inv_counts[inv_num] = 1024
-                if event.key == pygame.K_p:
-                    print(player_x, player_y)
-                if event.key == pygame.K_z:
+                if event.key == pygame.K_t and creative_mode[0]:
+                    block = input("Enter a block/item: ")
+                    count = items.get(block, {}).get("strength", None) or 64
+                    inventory[inv_num] = [block, count]
+                if event.key == pygame.K_z and creative_mode[0]:
                     camera_fixation = not camera_fixation
             if menu_open and event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_pos = pygame.mouse.get_pos()
                 for i, rect in enumerate(button_rects):
                     if rect.collidepoint(mouse_pos):
+                        sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
                         button_function = list(buttons.values())[i]
                         button_function()
             if event.type == pygame.MOUSEBUTTONDOWN and not (inventory_open or menu_open or crafting_open): 
                 if event.button == 3:
                     block = get_block_at()
-                    if block and block.type == "crafting_table":
-                        crafting_open = True
+                    if block:
+                        if block.type == "crafting_table":
+                            sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                            sound = pygame.mixer.Sound(sound_path)
+                            sound.set_volume(vol_sound)
+                            sound.play()
+                            crafting_open = True
             if event.type == pygame.MOUSEBUTTONDOWN and (inventory_open or crafting_open or menu_open):
                 if event.button == 1:
                     doubling_item = False
@@ -950,7 +1172,7 @@ while running:
 
                         slot_rect = pygame.Rect(x, y_offset, 50, 50)
                         if slot_rect.collidepoint(mouse_x, mouse_y):
-                            if inv_items[i] is not None:
+                            if inventory[i][0] is not None:
                                 dragging_item = i
                                 original_slot = i
                             break
@@ -984,6 +1206,8 @@ while running:
                         result_rect = pygame.Rect(x_b, y_b, 50, 50)
                         if result_rect.collidepoint(mouse_x, mouse_y):
                             if result_craft[0] is not None:
+                                sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                                pygame.mixer.Sound(sound_path).play()
                                 dragging_item = 110
                                 original_slot = 110
                     elif crafting_open:
@@ -992,6 +1216,10 @@ while running:
                         result_rect = pygame.Rect(x_b, y_b, 50, 50)
                         if result_rect.collidepoint(mouse_x, mouse_y):
                             if result_craft[0] is not None:
+                                sound_path = os.path.join(files_path, "sounds", "click.mp3")
+                                sound = pygame.mixer.Sound(sound_path)
+                                sound.set_volume(vol_sound)
+                                sound.play()
                                 dragging_item = 110
                                 original_slot = 110
                 elif event.button == 3:
@@ -1003,13 +1231,13 @@ while running:
 
                         slot_rect = pygame.Rect(x, y_offset, 50, 50)
                         if slot_rect.collidepoint(mouse_x, mouse_y):
-                            if inv_items[i] is not None and inv_counts[i] > 1:
+                            if inventory[i][0] is not None and inventory[i][1] > 1:
                                 doubling_item = True
                                 dragging_item = i
                                 original_slot = i
-                                split_count = inv_counts[i] // 2
-                                inv_counts[i] -= split_count
-                                temp_item = (inv_items[i], split_count)
+                                split_count = inventory[i][1] // 2
+                                inventory[i][1] -= split_count
+                                temp_item = (inventory[i][0], split_count)
                             break
                     if inventory_open:
                         for i in range(4):
@@ -1059,31 +1287,31 @@ while running:
                                 break
 
                             if dragging_item < 100:
-                                if inv_items[i] == inv_items[dragging_item] and not (item_type in items and items[item_type] is not None and "strength" in items[item_type]):
-                                    inv_counts[i] += inv_counts[dragging_item]
-                                    inv_items[dragging_item] = None
-                                    inv_counts[dragging_item] = 0
+                                if inventory[i][0] == inventory[dragging_item][0] and not (inventory[i][0] in items and items[inventory[i][0]] is not None and "strength" in items[inventory[i][0]]):
+                                    inventory[i][1] += inventory[dragging_item][1]
+                                    inventory[dragging_item][0] = None
+                                    inventory[dragging_item][1] = 0
                                 else:
-                                    inv_items[i], inv_items[dragging_item] = inv_items[dragging_item], inv_items[i]
-                                    inv_counts[i], inv_counts[dragging_item] = inv_counts[dragging_item], inv_counts[i]
+                                    inventory[i][0], inventory[dragging_item][0] = inventory[dragging_item][0], inventory[i][0]
+                                    inventory[i][1], inventory[dragging_item][1] = inventory[dragging_item][1], inventory[i][1]
 
                             elif 100 <= dragging_item < 110:
                                 craft_index = dragging_item - 100
-                                if inv_items[i] == crafting_base[craft_index] and not (crafting_base[craft_index] in items and items[crafting_base[craft_index]] is not None and "strength" in items[crafting_base[craft_index]]):
-                                    inv_counts[i] += crafting_base_count[craft_index]
+                                if inventory[i][0] == crafting_base[craft_index] and not (crafting_base[craft_index] in items and items[crafting_base[craft_index]] is not None and "strength" in items[crafting_base[craft_index]]):
+                                    inventory[i][1] += crafting_base_count[craft_index]
                                     crafting_base[craft_index] = None
                                     crafting_base_count[craft_index] = 0
                                 else:
-                                    inv_items[i], crafting_base[craft_index] = crafting_base[craft_index], inv_items[i]
-                                    inv_counts[i], crafting_base_count[craft_index] = crafting_base_count[craft_index], inv_counts[i]
+                                    inventory[i][0], crafting_base[craft_index] = crafting_base[craft_index], inventory[i][0]
+                                    inventory[i][1], crafting_base_count[craft_index] = crafting_base_count[craft_index], inventory[i][1]
 
                             if dragging_item == 110:
-                                if inv_items[i] is None:
-                                    inv_items[i] = result_craft[0]
-                                    inv_counts[i] = result_craft[1]
+                                if inventory[i][0] is None:
+                                    inventory[i][0] = result_craft[0]
+                                    inventory[i][1] = result_craft[1]
                                     result_craft = (None, 0)
-                                elif result_craft[0] == inv_items[i]:
-                                    inv_counts[i] += result_craft[1]
+                                elif result_craft[0] == inventory[i][0]:
+                                    inventory[i][1] += result_craft[1]
                                     result_craft = (None, 0)
                                 dragging_item = None
                                 original_slot = None
@@ -1111,13 +1339,13 @@ while running:
                                     break
 
                                 if dragging_item < 100:
-                                    if crafting_base[i] == inv_items[dragging_item] and not (item_type in items and items[item_type] is not None and "strength" in items[item_type]):
-                                        crafting_base_count[i] += inv_counts[dragging_item]
-                                        inv_items[dragging_item] = None
-                                        inv_counts[dragging_item] = 0
+                                    if crafting_base[i] == inventory[dragging_item][0] and not (crafting_base[i] in items and items[crafting_base[i]] is not None and "strength" in items[crafting_base[i]]):
+                                        crafting_base_count[i] += inventory[dragging_item][1]
+                                        inventory[dragging_item][0] = None
+                                        inventory[dragging_item][1] = 0
                                     else:
-                                        crafting_base[i], inv_items[dragging_item] = inv_items[dragging_item], crafting_base[i]
-                                        crafting_base_count[i], inv_counts[dragging_item] = inv_counts[dragging_item], crafting_base_count[i]
+                                        crafting_base[i], inventory[dragging_item][0] = inventory[dragging_item][0], crafting_base[i]
+                                        crafting_base_count[i], inventory[dragging_item][1] = inventory[dragging_item][1], crafting_base_count[i]
 
                                 elif 100 <= dragging_item < 110:
                                     craft_index = dragging_item - 100
@@ -1145,13 +1373,13 @@ while running:
                                     break
 
                                 if dragging_item < 100:
-                                    if crafting_base[i] == inv_items[dragging_item] and not (item_type in items and items[item_type] is not None and "strength" in items[item_type]):
-                                        crafting_base_count[i] += inv_counts[dragging_item]
-                                        inv_items[dragging_item] = None
-                                        inv_counts[dragging_item] = 0
+                                    if crafting_base[i] == inventory[dragging_item][0] and not (crafting_base[i] in items and items[crafting_base[i]] is not None and "strength" in items[crafting_base[i]]):
+                                        crafting_base_count[i] += inventory[dragging_item][1]
+                                        inventory[dragging_item][0] = None
+                                        inventory[dragging_item][1] = 0
                                     else:
-                                        crafting_base[i], inv_items[dragging_item] = inv_items[dragging_item], crafting_base[i]
-                                        crafting_base_count[i], inv_counts[dragging_item] = inv_counts[dragging_item], crafting_base_count[i]
+                                        crafting_base[i], inventory[dragging_item][0] = inventory[dragging_item][0], crafting_base[i]
+                                        crafting_base_count[i], inventory[dragging_item][1] = inventory[dragging_item][1], crafting_base_count[i]
 
                                 elif 100 <= dragging_item < 110:
                                     craft_index = dragging_item - 100
@@ -1169,13 +1397,13 @@ while running:
 
                     if dragging_item == 110:
                         for i in range(36):
-                            if inv_items[i] is None:
-                                inv_items[i] = result_craft[0]
-                                inv_counts[i] = result_craft[1]
+                            if inventory[i][0] is None:
+                                inventory[i][0] = result_craft[0]
+                                inventory[i][1] = result_craft[1]
                                 result_craft = (None, 0)
                                 break
-                            elif result_craft[0] == inv_items[i] and not (item_type in items and items[item_type] is not None and "strength" in items[item_type]):
-                                inv_counts[i] += result_craft[1]
+                            elif result_craft[0] == inventory[i][0] and not (inventory[i][0] in items and items[inventory[i][0]] is not None and "strength" in items[inventory[i][0]]):
+                                inventory[i][1] += result_craft[1]
                                 result_craft = (None, 0)
                                 break
 
@@ -1198,20 +1426,20 @@ while running:
                         slot_rect = pygame.Rect(x, y_offset, 50, 50)
                         if slot_rect.collidepoint(mouse_x, mouse_y):
                             if i == original_slot:
-                                inv_counts[original_slot] += temp_item[1]
+                                inventory[original_slot][1] += temp_item[1]
                                 dragging_item = None
                                 original_slot = None
                                 returned = True
                                 break
 
                             if dragging_item < 100:
-                                if inv_items[i] is None:
-                                    inv_items[i] = temp_item[0]
-                                    inv_counts[i] = temp_item[1]
-                                elif inv_items[i] == temp_item[0] and not (item_type in items and items[item_type] is not None and "strength" in items[item_type]):
-                                    inv_counts[i] += temp_item[1]
+                                if inventory[i][0] is None:
+                                    inventory[i][0] = temp_item[0]
+                                    inventory[i][1] = temp_item[1]
+                                elif inventory[i][0] == temp_item[0] and not (inventory[i][0] in items and items[inventory[i][0]] is not None and "strength" in items[inventory[i][0]]):
+                                    inventory[i][1] += temp_item[1]
                                 else:
-                                    inv_counts[original_slot] += temp_item[1]
+                                    inventory[original_slot][1] += temp_item[1]
                             returned = True
                             dragging_item = None
                             original_slot = None
@@ -1235,10 +1463,10 @@ while running:
                                     if crafting_base[i] is None:
                                         crafting_base[i] = temp_item[0]
                                         crafting_base_count[i] = temp_item[1]
-                                    elif crafting_base[i] == temp_item[0] and not (item_type in items and items[item_type] is not None and "strength" in items[item_type]):
+                                    elif crafting_base[i] == temp_item[0] and not (crafting_base[i] in items and items[crafting_base[i]] is not None and "strength" in items[crafting_base[i]]):
                                         crafting_base_count[i] += temp_item[1]
                                     else:
-                                        inv_counts[original_slot] += temp_item[1]
+                                        inventory[original_slot][1] += temp_item[1]
                                 elif 100 <= dragging_item < 110:
                                     craft_index = dragging_item - 100
                                     if crafting_base[i] is None:
@@ -1270,10 +1498,10 @@ while running:
                                     if crafting_base[i] is None:
                                         crafting_base[i] = temp_item[0]
                                         crafting_base_count[i] = temp_item[1]
-                                    elif crafting_base[i] == temp_item[0] and not (item_type in items and items[item_type] is not None and "strength" in items[item_type]):
+                                    elif crafting_base[i] == temp_item[0] and not (crafting_base[i] in items and items[crafting_base[i]] is not None and "strength" in items[crafting_base[i]]):
                                         crafting_base_count[i] += temp_item[1]
                                     else:
-                                        inv_counts[original_slot] += temp_item[1]
+                                        inventory[original_slot][1] += temp_item[1]
                                 elif 100 <= dragging_item < 110:
                                     craft_index = dragging_item - 100
                                     if crafting_base[i] is None:
@@ -1290,7 +1518,7 @@ while running:
 
                     if not returned:
                         if dragging_item < 100:
-                            inv_counts[original_slot] += temp_item[1]
+                            inventory[original_slot][1] += temp_item[1]
                         elif 100 <= dragging_item < 110:
                             crafting_base_count[original_slot - 100] += temp_item[1]
                         dragging_item = None
@@ -1311,11 +1539,11 @@ while running:
                             break
     if state == "menu":
         screen.fill((135, 206, 235))
-        if not play_open and not controls_open:
+        if not any([play_open, settings_open, controls_open, languages_open, sounds_open]):
             mbuttons = {
-                'Play': b2_play, 
-                'Controls': b2_controls, 
-                'Exit': b2_exit,
+                translated.get("Play", "Play"): b2_play, 
+                translated.get("Settings", "Settings"): b2_settings, 
+                translated.get("Exit", "Exit"): b2_exit,
             }
             camera_x = 0 - screen_width // 2 + player_width//2
             camera_y = -BLOCK_SIZE*3 - screen_height // 2 + player_height//2
@@ -1359,16 +1587,139 @@ while running:
                 text = font.render(list(mbuttons.keys())[i], True, (255, 255, 255))
                 text_rect = text.get_rect(center=rect.center)
                 screen.blit(text, text_rect)
+        elif settings_open:
+            screen.blit(background_image, (0, 0))
+            sbuttons = {
+                translated.get("Controls", "Controls"): b2_controls,
+                translated.get("Languages", "Languages"): b2_languages,
+                translated.get("Sounds", "Sounds"): b2_sounds,
+            }
+            font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 27)
+            button_width = 400
+            button_height = 50
+            spacing = 20
+
+            sbutton_rects = []
+            screen_width, screen_height = screen.get_size()
+            total_height = len(sbuttons) * button_height + (len(sbuttons) - 1) * spacing
+            start_y = (screen_height - total_height) // 2
+
+            for i, text in enumerate(sbuttons.keys()):
+                x = (screen_width - button_width) // 2
+                y = start_y + i * (button_height + spacing)
+                sbutton_rects.append(pygame.Rect(x, y, button_width, button_height))
+            for i, rect in enumerate(sbutton_rects):
+                button_image_path = os.path.join(files_path, "images", "_sys_button.png")
+                button_image = adjust_image(button_image_path, 400, 50)
+                screen.blit(button_image, (rect.x, rect.y))
+
+                text = font.render(list(sbuttons.keys())[i], True, (255, 255, 255))
+                text_rect = text.get_rect(center=rect.center)
+                screen.blit(text, text_rect)
+        elif sounds_open:
+            screen.blit(background_image, (0, 0))
+            msbuttons = {
+                translated.get("Music", "Music"): vol_music,
+                translated.get("Sound effects", "Sound effects"): vol_sound,
+            }
+            font = pygame.font.Font(files_path + "/other/Minecraftia.ttf", 27)
+            button_width = 400
+            button_height = 15
+            spacing = 125
+
+            msbutton_rects = []
+            screen_width, screen_height = screen.get_size()
+            total_height = len(msbuttons) * button_height + (len(msbuttons) - 1) * spacing
+            start_y = (screen_height - total_height) // 2
+
+            button_image_path = os.path.join(files_path, "images", "_sys_button.png")
+            button_image = adjust_image(button_image_path, 30, 30)
+
+            for i, text in enumerate(msbuttons.keys()):
+                x = (screen_width - button_width) // 2
+                y = start_y + i * (button_height + spacing)
+                msbutton_rects.append(pygame.Rect(x, y, button_width, button_height))
+
+            for i, rect in enumerate(msbutton_rects):
+                pygame.draw.rect(screen, (0, 0, 0), rect)
+
+                text_surface = font.render(list(msbuttons.keys())[i], True, (255, 255, 255))
+                text_rect = text_surface.get_rect(center=(rect.centerx, rect.top - 30))
+                screen.blit(text_surface, text_rect)
+
+                value = list(msbuttons.values())[i]
+                button_x = rect.left + int(value * (rect.width - 30))
+                button_y = rect.centery - 15
+                
+                screen.blit(button_image, (button_x, button_y))
+        elif languages_open:
+            screen.blit(background_image, (0, 0))
+            lbuttons = {
+                translated.get("Albanian", "Albanian"): "sq",
+                translated.get("Belarusian", "Belarusian"): "be",
+                translated.get("Bulgarian", "Bulgarian"): "bg",
+                translated.get("Croatian", "Croatian"): "hr",
+                translated.get("Czech", "Czech"): "cs",
+                translated.get("Danish", "Danish"): "da",
+                translated.get("Dutch", "Dutch"): "nl",
+                translated.get("English", "English"): "en",
+                translated.get("Estonian", "Estonian"): "et",
+                translated.get("Finnish", "Finnish"): "fi",
+                translated.get("French", "French"): "fr",
+                translated.get("German", "German"): "de",
+                translated.get("Greek", "Greek"): "el",
+                translated.get("Hungarian", "Hungarian"): "hu",
+                translated.get("Icelandic", "Icelandic"): "is",
+                translated.get("Italian", "Italian"): "it",
+                translated.get("Latvian", "Latvian"): "lv",
+                translated.get("Lithuanian", "Lithuanian"): "lt",
+                translated.get("Macedonian", "Macedonian"): "mk",
+                translated.get("Norwegian", "Norwegian"): "no",
+                translated.get("Polish", "Polish"): "pl",
+                translated.get("Portuguese", "Portuguese"): "pt",
+                translated.get("Romanian", "Romanian"): "ro",
+                translated.get("Russian", "Russian"): "ru",
+                translated.get("Serbian", "Serbian"): "sr",
+                translated.get("Slovak", "Slovak"): "sk",
+                translated.get("Slovenian", "Slovenian"): "sl",
+                translated.get("Spanish", "Spanish"): "es",
+                translated.get("Swedish", "Swedish"): "sv",
+                translated.get("Turkish", "Turkish"): "tr",
+                translated.get("Ukrainian", "Ukrainian"): "uk",
+            }
+            font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 27)
+            button_width = 400
+            button_height = 50
+            spacing = 20
+
+            lbutton_rects = []
+            screen_width, screen_height = screen.get_size()
+            total_height = len(lbuttons) * button_height + (len(lbuttons) - 1) * spacing
+            start_y = 100
+
+            for i, text in enumerate(lbuttons.keys()):
+                x = (screen_width - button_width) // 2
+                y = start_y + i * (button_height + spacing) + scroll
+                lbutton_rects.append(pygame.Rect(x, y, button_width, button_height))
+            for i, rect in enumerate(lbutton_rects):
+                if 50 <= rect.y <= screen_height-150:
+                    button_image_path = os.path.join(files_path, "images", "_sys_button.png")
+                    button_image = adjust_image(button_image_path, 400, 50)
+                    screen.blit(button_image, (rect.x, rect.y))
+
+                    text = font.render(list(lbuttons.keys())[i], True, (255, 255, 255))
+                    text_rect = text.get_rect(center=rect.center)
+                    screen.blit(text, text_rect)
         elif controls_open:
             screen.blit(background_image, (0, 0))
             c_buttons = {
-                'Left': LEFT, 
-                'Right': RIGHT, 
-                'Jump': JUMP,
-                'Sneak': SNEAK,
-                'Run': RUN,
-                'Inventory': WINDOW,
-                'Background build': BACK_BUILD
+                translated.get("Left", "Left"): LEFT,
+                translated.get("Right", "Right"): RIGHT,
+                translated.get("Jump", "Jump"): JUMP,
+                translated.get("Sneak", "Sneak"): SNEAK,
+                translated.get("Run", "Run"): RUN,
+                translated.get("Inventory", "Inventory"): WINDOW,
+                translated.get("Background build", "Background build"): BACK_BUILD,
             }
             button_width = 300
             button_height = 50
@@ -1405,12 +1756,13 @@ while running:
         elif play_open:
             screen.blit(background_image, (0, 0))
             p_buttons = {
-                "Flat world": flat_world,
-                "Keep inventory": keep_inventory,
-                "Daylight cycle": daylight_cycle,
-                "Weather cycle": weather_cycle,
-                "Mob spawning": mob_spawning,
-                "Mob loot": mob_loot,
+                translated.get("Creative mode", "Creative mode"): creative_mode,
+                translated.get("Flat world", "Flat world"): flat_world,
+                translated.get("Keep inventory", "Keep inventory"): keep_inventory,
+                translated.get("Daylight cycle", "Daylight cycle"): daylight_cycle,
+                translated.get("Weather cycle", "Weather cycle"): weather_cycle,
+                translated.get("Mob spawning", "Mob spawning"): mob_spawning,
+                translated.get("Mob loot", "Mob loot"): mob_loot,
             }
             button_width = 300
             button_height = 50
@@ -1452,7 +1804,7 @@ while running:
             generate_image = adjust_image(button_image_path, 400, 50)
             screen.blit(generate_image, (generate_x, generate_y))
 
-            generate_text = font.render("Generate world", True, (255, 255, 255))
+            generate_text = font.render(translated.get("Generate world", "Generate world"), True, (255, 255, 255))
             generate_text_rect = generate_text.get_rect(center=generate_button_rect.center)
             screen.blit(generate_text, generate_text_rect)
 
@@ -1463,11 +1815,11 @@ while running:
             load_image = adjust_image(button_image_path, 400, 50)
             screen.blit(load_image, (load_x, load_y))
 
-            load_text = font.render("Load world", True, (255, 255, 255))
+            load_text = font.render(translated.get("Load world", "Load world"), True, (255, 255, 255))
             load_text_rect = load_text.get_rect(center=load_button_rect.center)
             screen.blit(load_text, load_text_rect)
 
-        if controls_open or play_open:
+        if any([controls_open, play_open, settings_open, languages_open, sounds_open]):
             font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 27)
             exit_x = (screen_width - 200) // 2
             exit_y = screen_height - 70
@@ -1477,22 +1829,22 @@ while running:
             button_image = adjust_image(button_image_path, 200, 50)
             screen.blit(button_image, (exit_x, exit_y))
 
-            exit_text = font.render("Back", True, (255, 255, 255))
+            exit_text = font.render(translated.get("Back", "Back"), True, (255, 255, 255))
             exit_text_rect = exit_text.get_rect(center=exit_button_rect.center)
             screen.blit(exit_text, exit_text_rect)
     elif state == "game":
         current_time = pygame.time.get_ticks()
-        if daylight_cycle[0]:
+        if daylight_cycle[0] and not menu_open:
             if current_time-time_update >= 50:
                 time_update = current_time
                 time = (time+1) % 24000
                 all_time += 1
-        if weather_cycle[0]:
+        if weather_cycle[0] and not menu_open:
             if all_time % 48000 == 0:
                 is_rain = True
                 rain_off = False
                 raindrops = [{"x": random.randint(0, screen_width), "y": random.randint(0, screen_height)} for _ in range(screen_width//4)]
-                rain_update = (all_time, random.randint(6000, 12000))
+                rain_update = [all_time, random.randint(6000, 12000), current_time]
             elif all_time - rain_update[0] >= rain_update[1] and is_rain:
                 is_rain = False
                 rain_off = True
@@ -1541,7 +1893,8 @@ while running:
         keys = pygame.key.get_pressed()
         if not menu_open:
             if keys[SNEAK[0]]:
-                player_speed = default_speed / speed_multiplier
+                if not is_flying:
+                    player_speed = default_speed / speed_multiplier
                 player_width, player_height = shift_width, shift_height
             elif keys[RUN[0]] and hunger > 6:
                 player_speed = default_speed * speed_multiplier
@@ -1553,7 +1906,7 @@ while running:
         player_y += old_height - player_height
 
         player_rect = pygame.Rect(player_x, player_y, player_width, player_height)
-
+        
         ignore = []
         visible_platforms = [
             p for p in platforms
@@ -1565,6 +1918,10 @@ while running:
             )
         ]
         for p in visible_platforms:
+            if p.type == "lava":
+                lava_play = True
+            if p.type == "water":
+                water_play = True
             platform = p.platform
             if "physics" in blocks[p.type]:
                 is_supported = any(
@@ -1587,15 +1944,34 @@ while running:
                 elif old_player_rect.left >= platform.right:
                     player_x = platform.right
                 break
-        
+        if lava_play: lavasound.set_volume(1.0*vol_sound)
+        else: lavasound.set_volume(0.0)
+        if water_play: watersound.set_volume(1.0*vol_sound)
+        else: watersound.set_volume(0.0)
+
         dx, dy = 0, 0
         if not menu_open:
             if keys[LEFT[0]]:
                 dx -= player_speed
             if keys[RIGHT[0]]:
                 dx += player_speed
+            if (keys[LEFT[0]] or keys[RIGHT[0]]) and not in_liquid:
+                for p in visible_platforms:
+                    platform = p.platform
+                    if p.collide:
+                        if pygame.Rect(player_x + dx, player_y+5, player_width, player_height).colliderect(platform) and platform.y >= player_rect.bottom and x_distance >= BLOCK_SIZE:
+                            if p.type in blocks:
+                                if "sound" in blocks[p.type] and blocks[p.type]["sound"][1] != None:
+                                    sound = blocks[p.type]["sound"][1] + str(random.randint(1, 4))
+                                    sound_path = os.path.join(files_path, "sounds", "step", f"{sound}.ogg")
+                                    sound = pygame.mixer.Sound(sound_path)
+                                    sound.set_volume(vol_sound)
+                                    sound.play()
+                                    walking_update = current_time
+                                    x_distance -= BLOCK_SIZE
+                                    break
 
-            if keys[SNEAK[0]] and (keys[LEFT[0]] or keys[RIGHT[0]]) and not keys[JUMP[0]]:
+            if keys[SNEAK[0]] and (keys[LEFT[0]] or keys[RIGHT[0]]) and not keys[JUMP[0]] and not is_flying:
                 temp_rect = pygame.Rect(player_x + dx, player_y+5, player_width, player_height)
                 can_move = False
 
@@ -1608,33 +1984,63 @@ while running:
                 if not can_move:
                     dx = 0
 
-            if keys[JUMP[0]] and on_ground:
-                player_velocity_y = player_jump_speed
-                on_ground = False
+            if keys[JUMP[0]]:
+                if creative_mode[0]:
+                    if not jump_pressed:
+                        jump_pressed = True
+                        if current_time - last_jump_time <= double_jump_delay:
+                            is_flying = not is_flying
+                            player_velocity_y = 0
+                        last_jump_time = current_time
+                if on_ground and not is_flying:
+                    player_velocity_y = player_jump_speed
+                    on_ground = False
+            else:
+                jump_pressed = False
 
         in_liquid = False
         dealed_damage = False
         for p in visible_platforms:
             platform = p.platform
             if not p.collide and "liquid" in blocks[p.type] and player_rect.colliderect(platform):
-                in_liquid = True
+                in_liquid = p.type
                 if p.type == "lava":
                     dealed_damage = True
                 break
         if in_liquid:
-            if keys[SNEAK[0]]:
-                player_velocity_y += gravity 
+            if not is_flying:
+                if keys[SNEAK[0]]:
+                    player_velocity_y += gravity 
+                else:
+                    player_velocity_y += gravity / 3
+                if keys[JUMP[0]]:
+                    player_velocity_y = -gravity * 5
+            if (not splashplay or current_time - splash_update >= 3000) and (keys[LEFT[0]] or keys[RIGHT[0]]) and in_liquid == "water":
+                number = random.randint(1, 2)
+                sound_path = os.path.join(files_path, "sounds", f"splash{number}.mp3")
+                splashsound = pygame.mixer.Sound(sound_path)
+                splashplay.set_volume(vol_sound)
+                splashplay = splashsound.play()
+                splash_update = current_time
+        elif not menu_open:
+            if is_flying and creative_mode[0]:
+                if keys[JUMP[0]]:
+                    player_velocity_y = +player_jump_speed
+                elif keys[SNEAK[0]]:
+                    player_velocity_y = -player_jump_speed
+                else:
+                    player_velocity_y = 0
             else:
-                player_velocity_y += gravity / 3
-            if keys[JUMP[0]]:
-                player_velocity_y = -gravity * 3
-        else:
-            player_velocity_y += gravity
+                player_velocity_y += gravity
         dy += player_velocity_y
-        if dealed_damage:
+        if dealed_damage and not creative_mode[0]:
             current_time = pygame.time.get_ticks()
             if current_time >= lava_damage_timer:
                 deal_damage(4)
+                sound_path = os.path.join(files_path, "sounds", "hit.mp3")
+                sound = pygame.mixer.Sound(sound_path)
+                sound.set_volume(vol_sound)
+                sound.play()
                 lava_damage_timer = current_time + 750
             
         player_rect = pygame.Rect(player_x + dx, player_y, player_width, player_height)
@@ -1656,7 +2062,17 @@ while running:
                 if dy > 0:
                     if abs(player_velocity_y) > ((BLOCK_SIZE*3)*2*gravity)**(1/2) and not in_liquid:
                         damage = int(abs(((player_velocity_y) ** 2) / (2 * gravity)) // 50 - 3)
-                        deal_damage(damage)
+                        if not creative_mode[0]:
+                            deal_damage(damage)
+                        sound_path = os.path.join(files_path, "sounds", "fallbig.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
+                    elif abs(player_velocity_y) > gravity and not in_liquid:
+                        sound_path = os.path.join(files_path, "sounds", "fallsmall.mp3")
+                        fall = pygame.mixer.Sound(sound_path)
+                        fall.play()
+                        fall.set_volume(0.5*vol_sound)
                     player_y = platform.top - player_height
                     player_velocity_y = 0
                     dy = 0
@@ -1666,12 +2082,13 @@ while running:
                     player_velocity_y = 0
                     dy = 0
 
-        if camera_fixation:
+        if camera_fixation and not menu_open:
             player_x += dx
             player_y += dy
 
+            x_distance += abs(dx)
             sum_distance += sqrt(dx**2+dy**2) * (1+int(keys[RUN[0]]))
-            if sum_distance >= 80*BLOCK_SIZE:
+            if sum_distance >= 80*BLOCK_SIZE and not creative_mode[0]:
                 sum_distance -= 80*BLOCK_SIZE
                 hunger -= 1
                 hunger = max(hunger, 0)
@@ -1681,9 +2098,8 @@ while running:
             player_y = -BLOCK_SIZE*4
             health = 20
             hunger = 20
-            if not keep_inventory[0]:
-                inv_counts = [0]*36
-                inv_items = [None]*36
+            if not keep_inventory[0] and not creative_mode[0]:
+                inventory = [[None, 0] for _ in range(36)]
 
         if camera_fixation:
             camera_x = player_x - screen_width // 2 + player_width//2
@@ -1710,6 +2126,10 @@ while running:
         for p in reversed(visible_platforms):
             platform = p.platform
             if not p.collide:
+                if "back" in blocks[p.type]:
+                    darken = blocks[p.type]["back"]
+                    screen.blit(darken, (platform.x - camera_x, platform.y - camera_y))
+                    continue
                 image_path = os.path.join(files_path, "images", f"{p.type}.png")
                 
                 if os.path.exists(image_path):
@@ -1732,9 +2152,6 @@ while running:
                                     platforms.remove(p)
                         if not p.type in liquid_updating:
                             liquid_updating.append(p.type)
-                # else:
-                #     darken = darken_surface(texture, 0.5)
-                #     screen.blit(darken, (platform.x - camera_x, platform.y - camera_y))
                     
         for u in liquid_updating:
             blocks[u]["liquid"][1] = current_time
@@ -1770,13 +2187,13 @@ while running:
 
             mouse_buttons = pygame.mouse.get_pressed()
             if mouse_buttons[0] and not (inventory_open or crafting_open):
-                if block_at_mouse is not None and blocks[block_at_mouse.type]["break"] != float('inf'):
-                    btype = inv_items[inv_num]
+                if block_at_mouse is not None and (blocks[block_at_mouse.type]["break"] != float('inf') or creative_mode[0]):
+                    btype = inventory[inv_num][0]
                     doubler=1
                     
                     for breaktool in mining.keys():
                         if btype is not None and breaktool in btype and sum([int(b in block_at_mouse.type) for b in mining[breaktool]]) > 0:
-                            doubler = items[type]["dig"]
+                            doubler = items[btype]["dig"]
                             break
 
                     block_at_mouse.broke = True
@@ -1810,35 +2227,57 @@ while running:
                 block_at_mouse.breaktime = 0
 
             if mouse_buttons[2] and not (inventory_open or crafting_open):
-                t = inv_items[inv_num]
+                t = inventory[inv_num][0]
                 if t is not None:
                     if t in items and "hunger" in items[t]:
+                        if current_time - 120 <= eating_update <= current_time and (hunger < 20 or t == "golden_apple"):
+                            sound_path = os.path.join(files_path, "sounds", "eating.mp3")
+                            eat = pygame.mixer.Sound(sound_path)
+                            eat.set_volume(vol_sound)
+                            eat.play()
                         if current_time - eating_update >= 1600 and (hunger < 20 or t == "golden_apple"):
                             hunger += items[t]["hunger"]
                             hunger = min(hunger, 20)
-                            inv_counts[inv_num] -= 1
-                            if inv_counts[inv_num] <= 0:
-                                inv_items[inv_num] = None
+                            inventory[inv_num][1] -= 1
+                            if inventory[inv_num][1] <= 0:
+                                inventory[inv_num][0] = None
                             if t == "golden_apple":
                                 extra_health += 4
                             eating_update = current_time
                     elif t == "bucket":
-                        if block_at_mouse and "liquid" in blocks[block_at_mouse.type]:
-                            inv_items[inv_num] = block_at_mouse.type + "_bucket"
+                        if block_at_mouse and "liquid" in blocks[block_at_mouse.type] and block_at_mouse.parent is None:
+                            ind = 0
+                            for i, item in enumerate(inventory):
+                                if item == [None, 0]:
+                                    ind = i
+                                    break
+                            inventory[ind][0] = block_at_mouse.type + "_bucket"
+                            inventory[inv_num][1] -= 1
+                            if inventory[inv_num][1] <= 0:
+                                inventory[inv_num][0] = None
                             if not block_at_mouse.collide:
                                 platforms.remove(block_at_mouse)
+                                block_up = get_block_at(mouse=(block_x, block_y-BLOCK_SIZE))
+                                if block_up:
+                                    block_up.liquided = False
                                 try:
                                     chunks[cur_chunk][0].remove(block_at_mouse)
                                 except: None
-                    elif block_at_mouse is None or ("liquid" in blocks[block_at_mouse.type] and block_at_mouse.type != t and (block_at_mouse.type != items[t]["block"] if t in items and "block" in items[t] else True)):
+                    elif block_at_mouse is None or ("liquid" in blocks[block_at_mouse.type] and block_at_mouse.type != t and (block_at_mouse.type != items[t]["block"] if t in items and "block" in items[t] else True)) or (not block_at_mouse.collide and not "liquid" in blocks[block_at_mouse.type] and not keys[BACK_BUILD[0]]):
                         remain = None
                         if t in items and "block" in items[t]:
                             if "remain" in items[t]:
                                 remain = items[t]["remain"]
                             t = items[t]["block"]
                         if t in blocks:
-                            if not pygame.Rect(block_x, block_y, BLOCK_SIZE, BLOCK_SIZE).colliderect(player_rect):
-                                if block_at_mouse is not None and not block_at_mouse.collide:
+                            if not pygame.Rect(block_x, block_y, BLOCK_SIZE, BLOCK_SIZE).colliderect(player_rect) or keys[BACK_BUILD[0]]:
+                                if "sound" in blocks[t] and blocks[t]["sound"][0] != None:
+                                    sound = blocks[t]["sound"][0] + str(random.randint(1, 4))
+                                    sound_path = os.path.join(files_path, "sounds", "dig", f"{sound}.ogg")
+                                    sound = pygame.mixer.Sound(sound_path)
+                                    sound.set_volume(vol_sound)
+                                    sound.play()
+                                if block_at_mouse is not None and "liquid" in blocks[block_at_mouse.type]:
                                     platforms.remove(block_at_mouse)
                                     try:
                                         chunks[cur_chunk][0].remove(block_at_mouse)
@@ -1854,34 +2293,48 @@ while running:
                                 block_up = get_block_at(mouse=(block_x, block_y-BLOCK_SIZE))
                                 if block_up:
                                     block_up.liquided = False
-                                inv_counts[inv_num] -= 1
-                                if inv_counts[inv_num] <= 0:
-                                    inv_items[inv_num] = None
+                                inventory[inv_num][1] -= 1
+                                if inventory[inv_num][1] <= 0:
+                                    inventory[inv_num][0] = None
                                 if remain:
                                     for i in range(36):
-                                        if inv_items[i] == None and inv_counts[i] == 0:
-                                            inv_items[i] = remain
-                                            inv_counts[i] = 1
+                                        if inventory[i][0] == None and inventory[i][1] == 0:
+                                            inventory[i][0] = remain
+                                            inventory[i][1] = 1
                                             break
             else:
                 eating_update = current_time
+                if eat:
+                    eat.stop()
 
-            if hunger == 20 and health < 20:
-                if current_time - health_update >= game_tick:
-                    health += 1
-                    health = min(health, 20)
-                    health_update = current_time
-            elif hunger == 0:
-                if current_time - health_update >= game_tick:
-                    deal_damage(1)
-                    health_update = current_time
-            elif extra_health > 0:
-                if current_time - health_update >= 3000:
-                    extra_health -= 2
-                    extra_health = max(extra_health, 0)
-                    health_update = current_time
+            if not creative_mode[0]:
+                if hunger == 20 and health < 20:
+                    if current_time - health_update >= game_tick:
+                        health += 1
+                        health = min(health, 20)
+                        health_update = current_time
+                elif hunger == 0:
+                    if current_time - health_update >= game_tick:
+                        deal_damage(1)
+                        sound_path = os.path.join(files_path, "sounds", "hit.mp3")
+                        sound = pygame.mixer.Sound(sound_path)
+                        sound.set_volume(vol_sound)
+                        sound.play()
+                        health_update = current_time
+                elif extra_health > 0:
+                    if current_time - health_update >= 10000:
+                        extra_health -= 2
+                        extra_health = max(extra_health, 0)
+                        health_update = current_time
 
         if is_rain or rain_off:
+            if not rainplay or current_time - rain_update[2] >= 1000:
+                number = random.randint(1, 4)
+                sound_path = os.path.join(files_path, "sounds", f"rain{number}.wav")
+                rainsound = pygame.mixer.Sound(sound_path)
+                rainsound.set_volume(vol_sound)
+                rainplay = rainsound.play()
+                rain_update[2] = current_time
             for drop in raindrops:
                 pygame.draw.line(screen, (193, 205, 217), (drop["x"], drop["y"]), (drop["x"], drop["y"] + screen_height//60), screen_width//400)
                 drop["y"] += 50
@@ -1889,51 +2342,59 @@ while running:
                 if drop["y"] > screen_height and is_rain:
                     drop["y"] = random.randint(0, screen_height//15)
                     drop["x"] = random.randint(0, screen_width)
+            if rain_off:
+                offing = True
+                for drop in raindrops:
+                    if drop["y"] < screen_height:
+                        offing = False
+                if offing:
+                    rain_off = False
 
         inventory_width = 9 * 50
         y = screen_height - 100
         start_x = (screen_width - inventory_width) // 2
         
-        for i in range(10):
-            x = 8 + start_x + 20*i
-            y_offset = y - 20
-            if health - i * 2 >= 2:
-                level = 2
-            elif health - i * 2 == 1:
-                level = 1
-            else:
-                level = 0
-            path = os.path.join(files_path, "images", f"_sys_heart{level}.png")
-            if os.path.exists(path):
-                item_image = pygame.image.load(path)
-                item_image = pygame.transform.scale(item_image, (18, 18))
-                screen.blit(item_image, (x, y_offset))
-            else:
-                block_color = (255, 0, 255)
-                pygame.draw.rect(screen, block_color, (x, y_offset, 18, 18))
+        if not creative_mode[0]:
+            for i in range(10):
+                x = 8 + start_x + 20*i
+                y_offset = y - 20
+                if health - i * 2 >= 2:
+                    level = 2
+                elif health - i * 2 == 1:
+                    level = 1
+                else:
+                    level = 0
+                path = os.path.join(files_path, "images", f"_sys_heart{level}.png")
+                if os.path.exists(path):
+                    item_image = pygame.image.load(path)
+                    item_image = pygame.transform.scale(item_image, (18, 18))
+                    screen.blit(item_image, (x, y_offset))
+                else:
+                    block_color = (255, 0, 255)
+                    pygame.draw.rect(screen, block_color, (x, y_offset, 18, 18))
 
-        for i in range(10):
-            x = 8 + start_x + 416 - 20*i
-            y_offset = y - 20
-            if hunger - i * 2 >= 2:
-                level = 2
-            elif hunger - i * 2 == 1:
-                level = 1
-            else:
-                level = 0
-            path = os.path.join(files_path, "images", f"_sys_hunger{level}.png")
-            if os.path.exists(path):
-                item_image = pygame.image.load(path)
-                item_image = pygame.transform.scale(item_image, (18, 18))
-                screen.blit(item_image, (x, y_offset))
-            else:
-                block_color = (255, 0, 255)
-                pygame.draw.rect(screen, block_color, (x, y_offset, 18, 18))
-        
-        for i in range(round(extra_health/2)):
-            x = 8 + start_x + 20*(i%10)
-            y_offset = y - 40 - 20*(i//10)
-            screen.blit(gold_heart, (x, y_offset))
+            for i in range(10):
+                x = 8 + start_x + 416 - 20*i
+                y_offset = y - 20
+                if hunger - i * 2 >= 2:
+                    level = 2
+                elif hunger - i * 2 == 1:
+                    level = 1
+                else:
+                    level = 0
+                path = os.path.join(files_path, "images", f"_sys_hunger{level}.png")
+                if os.path.exists(path):
+                    item_image = pygame.image.load(path)
+                    item_image = pygame.transform.scale(item_image, (18, 18))
+                    screen.blit(item_image, (x, y_offset))
+                else:
+                    block_color = (255, 0, 255)
+                    pygame.draw.rect(screen, block_color, (x, y_offset, 18, 18))
+            
+            for i in range(round(extra_health/2)):
+                x = 8 + start_x + 20*(i%10)
+                y_offset = y - 40 - 20*(i//10)
+                screen.blit(gold_heart, (x, y_offset))
 
         if inventory_open or crafting_open:
             if inventory_open:
@@ -1950,7 +2411,7 @@ while running:
                 screen.blit(transparent_surface, (x, y_offset))
                 pygame.draw.rect(screen, (64, 64, 64), (x, y_offset, 50, 50), 2)
                 if dragging_item != i or doubling_item:
-                    item_draw(x, y_offset, inv_items[i], inv_counts[i])
+                    item_draw(x, y_offset, inventory[i][0], inventory[i][1])
         
         if inventory_open:
             if len(crafting_base) != 4: crafting_base = [None]*4
@@ -2010,14 +2471,14 @@ while running:
             pygame.draw.rect(screen, (64, 64, 64), (x, y, 50, 50), 2)
 
             if dragging_item != i or doubling_item:
-                item_draw(x, y, inv_items[i], inv_counts[i])
+                item_draw(x, y, inventory[i][0], inventory[i][1])
 
         pygame.draw.rect(screen, (225, 225, 225), (8 + start_x + inv_num * 50 - inv_num*2 -5, y-5, 60, 60), 5)
 
         if dragging_item is not None:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             if dragging_item < 100:
-                item_type = inv_items[dragging_item]
+                item_type = inventory[dragging_item][0]
             else:
                 if dragging_item == 110:
                     item_type = result_craft[0]
@@ -2034,10 +2495,10 @@ while running:
 
         if menu_open:
             buttons = {
-                'Resume': b_resume, 
-                'Save': b_save, 
-                'Exit': b_exit,
-                }
+                translated.get("Resume", "Resume"): b_resume, 
+                translated.get("Save", "Save"): b_save, 
+                translated.get("Exit", "Exit"): b_exit,
+            }
             button_width = 400
             button_height = 50
             spacing = 20
@@ -2065,6 +2526,9 @@ while running:
                 text_rect = text.get_rect(center=rect.center)
                 screen.blit(text, text_rect)
 
+        lava_play = False
+        water_play = False
+
     font = pygame.font.Font(files_path+"/other/Minecraftia.ttf", 18)
     text = font.render(VERSION, True, (255, 255, 255))
     text_rect = text.get_rect(topleft=(5, 5))
@@ -2072,4 +2536,27 @@ while running:
 
     pygame.display.flip()
     clock.tick(FPS)
+keys_to_save = {
+    "language": language,
+    "vol_music": vol_music,
+    "vol_sound": vol_sound,
+    "LEFT": LEFT,
+    "RIGHT": RIGHT,
+    "JUMP": JUMP,
+    "SNEAK": SNEAK,
+    "RUN": RUN,
+    "WINDOW": WINDOW,
+    "BACK_BUILD": BACK_BUILD,
+}
+data_to_save = {}
+for key, value in keys_to_save.items():
+    if isinstance(value, list) and len(value) == 1 and hasattr(pygame, "key"):
+        key_code_name = pygame.key.name(value[0])
+        data_to_save[key] = key_code_name
+    else:
+        data_to_save[key] = value
+
+with open(json_path, "w") as file:
+    json.dump(data_to_save, file, indent=4)
+    
 pygame.quit()
