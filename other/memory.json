@@ -1,0 +1,12 @@
+{
+    "language": "en",
+    "vol_music": 1,
+    "vol_sound": 1,
+    "LEFT": "a",
+    "RIGHT": "d",
+    "JUMP": "space",
+    "SNEAK": "left shift",
+    "RUN": "left ctrl",
+    "WINDOW": "e",
+    "BACK_BUILD": "s"
+}
