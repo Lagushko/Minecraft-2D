@@ -1,54 +1,54 @@
-import pygame
+import pygame, json, os
 
 blocks = {
-    "grass": {"break": 0.75, "drop": ["dirt"]},
-    "dirt": {"break": 0.75},
-    "sand": {"break": 0.5, "physics": True},
-    "stone": {"break": 1.5, "drop": ["cobblestone"], "tools": "_pickaxe"},
-    "cobblestone": {"break": 1.5, "tools": "_pickaxe"},
-    "lava": {"break": float('inf'), "liquid": [1, 0]},
-    "water": {"break": float('inf'), "liquid": [0.5, 0]},
-    "bedrock": {"break": float('inf')},
-    "wood": {"break": 1.0},
-    "leaves": {"break": 0.25, "drop": ["leaves"]*9+["apple"], "notooldrop": [None]*9+["apple"], "tools": "scissors"},
-    "sandstone": {"break": 1.0, "tools": "_pickaxe"},
-    "gravel": {"break": 0.75, "drop": ["gravel"]*9+["flint"], "physics": True},
-    "coal_ore": {"break": 1.5, "drop": ["coal"], "tools": "_pickaxe", "exc": ["wood_pickaxe"]},
-    "iron_ore": {"break": 1.5, "tools": "_pickaxe", "exc": ["wood_pickaxe", "gold_pickaxe"]},
-    "gold_ore": {"break": 1.5, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "diamond_ore": {"break": 1.5, "drop": ["diamond"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "emerald_ore": {"break": 1.5, "drop": ["emerald"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "redstone_ore": {"break": 1.5, "drop": ["redstone"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "lapis_ore": {"break": 1.5, "drop": (["lapis"], 7), "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe"]},
-    "planks": {"break": 1.0},
-    "crafting_table": {"break": 1.0},
-    "clay": {"break": 0.6, "drop": (["clay_ball"], 4)},
-    "glass": {"break": 0.4, "drop": [None]},
-    "obsidian": {"break": 9.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "gold_pickaxe"]},
-    "snow": {"break": 0.3, "drop": (["snowball"], 4)},
-    "ice": {"break": 0.5},
-    "nether_bricks": {"break": 1.5, "tools": "_pickaxe"},
-    "netherrack": {"break": 0.5, "tools": "_pickaxe"},
-    "soul_sand": {"break": 0.8},
-    "glowstone": {"break": 0.6, "drop": (["glowstone_dust"], 4)},
-    "bricks": {"break": 1.5, "tools": "_pickaxe"},
-    "quartz_ore": {"break": 1.5, "drop": ["quartz"], "tools": "_pickaxe"},
-    "end_stone": {"break": 1.5, "tools": "_pickaxe"},
-    "anvil": {"break": 5.0, "tools": "_pickaxe", "physics": True},
-    "iron_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "gold_block": {"break": 3.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "diamond_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "emerald_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "lapis_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe"]},
-    "redstone_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"]},
-    "coal_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe"]},
-    "quartz_block": {"break": 5.0, "tools": "_pickaxe"},
-    "diorite": {"break": 1.5, "tools": "_pickaxe"},
-    "andesite": {"break": 1.5, "tools": "_pickaxe"},
-    "granite": {"break": 1.5, "tools": "_pickaxe"},
-    "wool": {"break": 0.25},
-    "cobweb": {"break": 20, "drop": ["string"], "tools": "_sword"},
-    "melon": {"break": 0.5, "drop": (["melon_slice"], 4)}
+    "grass": {"break": 0.75, "drop": ["dirt"], "sound": ("grass", "grass", "grass")},
+    "dirt": {"break": 0.75, "sound": ("gravel", "gravel", "gravel")},
+    "sand": {"break": 0.5, "physics": True, "sound": ("sand", "sand", "sand")},
+    "stone": {"break": 1.5, "drop": ["cobblestone"], "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "cobblestone": {"break": 1.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "lava": {"break": float('inf'), "liquid": [1, 0], "sound": (None, None, None)},
+    "water": {"break": float('inf'), "liquid": [0.5, 0], "sound": (None, None, None)},
+    "bedrock": {"break": float('inf'), "sound": ("stone", "stone", "stone")},
+    "wood": {"break": 1.0, "sound": ("wood", "wood", "wood")},
+    "leaves": {"break": 0.25, "drop": ["leaves"]*9+["apple"], "notooldrop": [None]*9+["apple"], "tools": "scissors", "sound": ("grass", "stone", "grass")},
+    "sandstone": {"break": 1.0, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "gravel": {"break": 0.75, "drop": ["gravel"]*9+["flint"], "physics": True, "sound": ("gravel", "gravel", "gravel")},
+    "coal_ore": {"break": 1.5, "drop": ["coal"], "tools": "_pickaxe", "exc": ["wood_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "iron_ore": {"break": 1.5, "tools": "_pickaxe", "exc": ["wood_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "gold_ore": {"break": 1.5, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "diamond_ore": {"break": 1.5, "drop": ["diamond"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "emerald_ore": {"break": 1.5, "drop": ["emerald"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "redstone_ore": {"break": 1.5, "drop": ["redstone"], "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "lapis_ore": {"break": 1.5, "drop": (["lapis"], 7), "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "planks": {"break": 1.0, "sound": ("wood", "wood", "wood")},
+    "crafting_table": {"break": 1.0, "sound": ("wood", "wood", "wood")},
+    "clay": {"break": 0.6, "drop": (["clay_ball"], 4), "sound": ("gravel", "gravel", "gravel")},
+    "glass": {"break": 0.4, "drop": [None], "sound": (None, "stone", "stone")},
+    "obsidian": {"break": 9.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "snow": {"break": 0.3, "drop": (["snowball"], 4), "sound": ("snow", "snow", "snow")},
+    "ice": {"break": 0.5, "sound": (None, "snow", "stone")},
+    "nether_bricks": {"break": 1.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "netherrack": {"break": 0.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "soul_sand": {"break": 0.8, "sound": ("sand", "sand", "sand")},
+    "glowstone": {"break": 0.6, "drop": (["glowstone_dust"], 4), "sound": (None, "stone", "stone")},
+    "bricks": {"break": 1.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "quartz_ore": {"break": 1.5, "drop": ["quartz"], "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "end_stone": {"break": 1.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "anvil": {"break": 5.0, "tools": "_pickaxe", "physics": True, "sound": ("stone", "stone", "stone")},
+    "iron_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "gold_block": {"break": 3.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "diamond_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "emerald_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "lapis_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "redstone_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe", "stone_pickaxe", "gold_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "coal_block": {"break": 5.0, "tools": "_pickaxe", "exc": ["wood_pickaxe"], "sound": ("stone", "stone", "stone")},
+    "quartz_block": {"break": 5.0, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "diorite": {"break": 1.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "andesite": {"break": 1.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "granite": {"break": 1.5, "tools": "_pickaxe", "sound": ("stone", "stone", "stone")},
+    "wool": {"break": 0.25, "sound": ("cloth", "stone", "cloth")},
+    "cobweb": {"break": 20, "drop": ["string"], "tools": "_sword", "sound": (None, None, None)},
+    "melon": {"break": 0.5, "drop": (["melon_slice"], 4), "sound": ("wood", "stone", "wood")}
 }
 # break - time for breaking block in seconds
 # drop - items or blocks that will drop if don't block drop themself (if more than 1 items it will be chosen randomly, and if make it a tuple the second value is an amount of drop)
@@ -57,6 +57,7 @@ blocks = {
 # tools - name of only tool that can break this block to have drop
 # exc - exceptions for tools that can't break this block
 # liquid - speed at which the liquid spreads in seconds, last time updated (just leave 0)
+# sound - sound name while breaking block, sound name while moving on the block
 
 items = {
     # tools
@@ -186,7 +187,7 @@ craft = {
 mining = {
     "_axe": ["wood", "planks", "crafting_table"],
     "_pickaxe": ["stone", "ore", "bricks", "anvil", "netherrack", "_block", "andesite", "diorite", "granite"],
-    "_shovel": ["dirt", "grass", "sand", "snow", "gravel"],
+    "_shovel": ["grass", "grass", "sand", "snow", "gravel"],
     "scissors": ["leaves", "wool"],
     "_sword": ["cobweb"]
 }
@@ -217,7 +218,72 @@ health = 20
 hunger = 20
 time = 0
 
-VERSION = "Beta-0.12.0"
+VERSION = "Beta-0.13.0"
+
+translated = {
+    "Play": "Play",
+    "Settings": "Settings",
+    "Exit": "Exit",
+    "Back": "Back",
+    "Creative mode": "Creative mode",
+    "Flat world": "Flat world",
+    "Keep inventory": "Keep inventory",
+    "Daylight cycle": "Daylight cycle",
+    "Weather cycle": "Weather cycle",
+    "Mob spawning": "Mob spawning",
+    "Mob loot": "Mob loot",
+    "Left": "Left",
+    "Right": "Right",
+    "Jump": "Jump",
+    "Sneak": "Sneak",
+    "Run": "Run",
+    "Inventory": "Inventory",
+    "Background build": "Background build",
+    "Albanian": "Albanian",
+    "Belarusian": "Belarusian",
+    "Bulgarian": "Bulgarian",
+    "Croatian": "Croatian",
+    "Czech": "Czech",
+    "Danish": "Danish",
+    "Dutch": "Dutch",
+    "English": "English",
+    "Estonian": "Estonian",
+    "Finnish": "Finnish",
+    "French": "French",
+    "German": "German",
+    "Greek": "Greek",
+    "Hungarian": "Hungarian",
+    "Icelandic": "Icelandic",
+    "Italian": "Italian",
+    "Latvian": "Latvian",
+    "Lithuanian": "Lithuanian",
+    "Macedonian": "Macedonian",
+    "Norwegian": "Norwegian",
+    "Polish": "Polish",
+    "Portuguese": "Portuguese",
+    "Romanian": "Romanian",
+    "Russian": "Russian",
+    "Serbian": "Serbian",
+    "Slovak": "Slovak",
+    "Slovenian": "Slovenian",
+    "Spanish": "Spanish",
+    "Swedish": "Swedish",
+    "Turkish": "Turkish",
+    "Ukrainian": "Ukrainian",
+    "Controls": "Controls",
+    "Languages": "Languages",
+    "Load world": "Load world",
+    "Generate world": "Generate world",
+    "Loading world": "Loading world",
+    "Generating world": "Generating world",
+    "ERROR file is damaged. Generating new world": "ERROR file is damaged. Generating new world",
+    "Sound effects": "Sound effects",
+    "Music": "Music",
+    "Sounds": "Sounds"
+}
+language = "en"
+vol_music = 1.0
+vol_sound = 1.0
 
 # controls
 LEFT = [pygame.K_a]
@@ -229,7 +295,28 @@ WINDOW = [pygame.K_e]
 BACK_BUILD = [pygame.K_s]
 MENU = [pygame.K_ESCAPE]
 
+def get_key(key_name):
+    key_name = key_name.lower().replace(" ", "_")
+    for attr in dir(pygame):
+        if attr.startswith("K_") and attr[2:].lower() == key_name:
+            return getattr(pygame, attr)
+    raise ValueError()
+
+files_path = str(os.path.dirname(os.path.abspath(__file__)))
+json_path = os.path.join(files_path, "other", "memory.json")
+with open(json_path, "r") as file:
+    data = json.load(file)
+for key, value in data.items():
+    if key in ["language", "vol_music", "vol_sound"]:
+        globals()[key] = value
+    else:
+        try:
+            globals()[key] = [get_key(value)]
+        except Exception as e:
+            continue
+
 # rules
+creative_mode = [False]
 flat_world = [False]
 keep_inventory = [False]
 daylight_cycle = [True]
