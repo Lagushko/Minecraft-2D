@@ -22,7 +22,7 @@ Beta-0.11.0 save worlds, game menu;
 -> Beta-0.11.2 advanced generation, block physics;                 
 Beta-0.12.0 food, endless generation;                 
 Beta-0.13.0 sounds, more settings;                 
-Beta-0.14.0 special blocks;                 
+Beta-0.14.0 special blocks, redstone;                 
 Beta-0.15.0 special items, effects;                 
 Beta-0.16.0 mobs;                 
 Beta-0.17.0 nether world;                 
