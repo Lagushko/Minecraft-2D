@@ -5,7 +5,8 @@ Also, below the dictionaries and character settings, the game functionality sett
 
 **Versions and updates planned for the game:**
 
-```Alpha-0.1.0 physics and mechanics;                             
+```
+Alpha-0.1.0 physics and mechanics;                             
 Alpha-0.2.0 open world;                 
 Alpha-0.3.0 breaking blocks;
   Alpha-0.3.1 building blocks;                 
